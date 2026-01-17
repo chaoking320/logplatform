@@ -1,9 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import {
-    Search, Calendar, Clock, FileText, ChevronRight,
-    Download, RefreshCw, Terminal, AlertCircle,
-    CheckCircle2, Info, Server, Code, Copy, ChevronDown
-} from 'lucide-react';
+import { Search, Calendar, Clock, FileText, ChevronDown, Download, RefreshCw, Terminal, CheckCircle2 } from 'lucide-react';
 
 // --- 日志行解析器 ---
 // 针对：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job...]
@@ -27,43 +23,123 @@ const parseLogLine = (raw, id) => {
     return { id, raw, time: "Unknown", level: "OTHER", msg: raw };
 };
 
+// --- JSON 格式化工具 ---
+const tryFormatJson = (text) => {
+    try {
+        const jsonMatch = text.match(/\{.*\}|\[.*\]/);
+        if (jsonMatch) {
+            const obj = JSON.parse(jsonMatch[0]);
+            return JSON.stringify(obj, null, 2);
+        }
+    } catch (e) {
+        return null;
+    }
+    return null;
+};
+
+// --- API 请求封装 ---
+const fetchLogs = async (
+    date,
+    keyword,
+    startTime,
+    endTime
+) => {
+    try {
+        const response = await fetch(`/api/logs/query?date=${date}&keyword=${encodeURIComponent(keyword)}&startTime=${startTime}&endTime=${endTime}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch logs');
+        }
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+        throw error;
+    }
+};
+
+// --- 获取可用日期列表 ---
+const fetchAvailableDates = async () => {
+    try {
+        const response = await fetch('/api/logs/dates');
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch available dates');
+        }
+    } catch (error) {
+        console.error('Error fetching available dates:', error);
+        return [];
+    }
+};
+
+// --- 主组件 ---
 const App = () => {
     const [logs, setLogs] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [selectedDate, setSelectedDate] = useState("2026-01-08");
-    const [startTime, setStartTime] = useState("14:00");
-    const [endTime, setEndTime] = useState("15:00");
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [startTime, setStartTime] = useState("00:00");
+    const [endTime, setEndTime] = useState("23:59");
     const [searchQuery, setSearchQuery] = useState("");
     const [filterLevel, setFilterLevel] = useState("ALL");
-    const [expandedLog, setExpandedLog] = useState(null);
+    const [expandedLog, setExpandedLog] = React.useState(null);
+    const [error, setError] = React.useState(null);
     const scrollRef = useRef(null);
 
-    // 模拟加载逻辑
-    const fetchLogs = () => {
-        setIsLoading(true);
-        // 模拟后端接口请求
-        setTimeout(() => {
-            const mockRaw = [
-                `[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job, JobThread-11-1767852120013] com.central.apps.job.TroubleSubmitJob 最终的结果是：null,位置描述为：拉晶事业部/青海拉晶/二期切方硅料车间/开方/14#高测开方机`,
-                `[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.898 INFO 6762 [xxl-job, JobThread-11-1767852120013] com.central.apps.job.TroubleSubmitJob [故障提报单定时任务]计算超时时间,单据id：TB0098165`,
-                `[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.899 INFO 6762 [xxl-job, JobThread-11-1767852120013] com.central.apps.job.TroubleSubmitJob 故障提报单查出来的结果再转为JSON是:{"divisionCode":"1000058","regionleader":"R0794","devicemanager":"R0786","deviceleader":"R0785","DESCRIPTION":"31#一体机"}`,
-                `[task-center:172.28.243.190:30736] [,] 2026-01-08 14:05:12.123 ERROR 6762 [main] com.central.apps.service.TaskHandler 数据库连接超时: java.net.ConnectException: Connection refused`,
-                `[task-center:172.28.243.190:30736] [,] 2026-01-08 14:10:45.001 WARN 6762 [http-exec-5] com.central.apps.controller.ApiGate 检测到慢接口调用: /api/task/submit (耗时: 1560ms)`
-            ];
+    // 获取可用日期列表
+    const [availableDates, setAvailableDates] = useState([]);
 
-            const parsed = [];
-            for(let i=0; i<60; i++) {
-                parsed.push(parseLogLine(mockRaw[i % mockRaw.length], i));
+    useEffect(() => {
+        // 获取可用日期
+        const loadAvailableDates = async () => {
+            try {
+                const dates = await fetchAvailableDates();
+                setAvailableDates(dates);
+                // 如果有日期，设置最新的日期为默认值
+                if (dates.length > 0) {
+                    const latestDate = dates.sort().pop();
+                    setSelectedDate(latestDate);
+                }
+            } catch (error) {
+                console.error('Error fetching available dates:', error);
             }
-            setLogs(parsed);
+        };
+
+        loadAvailableDates();
+    }, []);
+
+    // 加载日志数据
+    const loadLogs = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const logData = await fetchLogs(selectedDate, searchQuery, startTime, endTime);
+            const parsedLogs = logData.map((raw, index) => parseLogLine(raw, index));
+            setLogs(parsedLogs);
+        } catch (error) {
+            console.error('Error loading logs:', error);
+            setError(error.message);
+        } finally {
             setIsLoading(false);
-        }, 600);
+        }
     };
 
     useEffect(() => {
-        fetchLogs();
+        loadLogs();
     }, [selectedDate]);
 
+    // 过滤日志
     const filteredLogs = useMemo(() => {
         return logs.filter(log => {
             const matchLevel = filterLevel === "ALL" || log.level === filterLevel;
@@ -74,15 +150,33 @@ const App = () => {
         });
     }, [logs, filterLevel, searchQuery, startTime, endTime]);
 
-    const tryFormatJson = (text) => {
-        try {
-            const jsonMatch = text.match(/\{.*\}|\[.*\]/);
-            if (jsonMatch) {
-                const obj = JSON.parse(jsonMatch[0]);
-                return JSON.stringify(obj, null, 2);
-            }
-        } catch (e) { return null; }
-        return null;
+    // 处理搜索
+    const handleSearch = () => {
+        loadLogs();
+    };
+
+    // 处理日期选择
+    const handleDateChange = (date) => {
+        setSelectedDate(date);
+    };
+
+    // 处理时间范围变化
+    const handleTimeChange = (type, value) => {
+        if (type === 'start') {
+            setStartTime(value);
+        } else {
+            setEndTime(value);
+        }
+    };
+
+    // 处理过滤级别变化
+    const handleFilterChange = (level) => {
+        setFilterLevel(level);
+    };
+
+    // 处理展开/折叠日志详情
+    const toggleExpand = (id) => {
+        setExpandedLog(expandedLog === id ? null : id);
     };
 
     return (
@@ -104,36 +198,59 @@ const App = () => {
                         <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
                             <Calendar size={14} /> 检索日期
                         </label>
-                        <input
-                            type="date"
+                        <select
                             value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
+                            onChange={(e) => handleDateChange(e.target.value)}
                             className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                        />
+                        >
+                            {availableDates.length > 0 ? (
+                                availableDates.sort().reverse().map(date => (
+                                    <option key={date} value={date}>{date}</option>
+                                ))
+                            ) : (
+                                <option value="">暂无可用日期</option>
+                            )}
+                        </select>
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                            <Clock size={14} /> 时间范围
+                            <Clock size={14} /> 时间范围:
                         </label>
                         <div className="grid grid-cols-2 gap-2">
-                            <input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} className="bg-[#0d1117] border border-slate-700 rounded-lg p-2 text-xs" />
-                            <input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} className="bg-[#0d1117] border border-slate-700 rounded-lg p-2 text-xs" />
+                            <input 
+                                type="time" 
+                                value={startTime} 
+                                onChange={e => handleTimeChange('start', e.target.value)} 
+                                className="bg-[#0d1117] border border-slate-700 rounded-lg p-2 text-xs" 
+                            />
+                            <input 
+                                type="time" 
+                                value={endTime} 
+                                onChange={e => handleTimeChange('end', e.target.value)} 
+                                className="bg-[#0d1117] border border-slate-700 rounded-lg p-2 text-xs" 
+                            />
                         </div>
                     </div>
 
                     <div className="pt-4 border-t border-slate-800">
                         <label className="text-[11px] font-bold text-slate-500 uppercase mb-3 block">文件分片检索</label>
                         <div className="space-y-2">
-                            {['Current', 'Part 3', 'Part 2', 'Part 1'].map((name, i) => (
-                                <div key={i} className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${i===0 ? 'bg-indigo-500/10 border-indigo-500/50 text-indigo-300' : 'bg-slate-800/20 border-slate-800 text-slate-500 hover:border-slate-700'}`}>
-                                    <div className="flex items-center gap-2">
-                                        <FileText size={14} />
-                                        <span className="text-xs font-medium">{i===0 ? 'task-center-info.log' : `...${selectedDate}.${4-i}.log`}</span>
-                                    </div>
-                                    {i===0 && <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>}
-                                </div>
-                            ))}
+                            {availableDates.length > 0 ? (
+                                availableDates
+                                    .filter(date => date === selectedDate)
+                                    .map(date => (
+                                        <div key={date} className="flex items-center justify-between p-3 rounded-lg border bg-indigo-500/10 border-indigo-500/50 text-indigo-300">
+                                            <div className="flex items-center gap-2">
+                                                <FileText size={14} />
+                                                <span className="text-xs font-medium">task-center-info.{date}.log</span>
+                                            </div>
+                                            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                                        </div>
+                                    ))
+                            ) : (
+                                <div className="text-xs text-slate-500 p-2">暂无可检索的日志文件</div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -144,8 +261,8 @@ const App = () => {
                             <CheckCircle2 size={16} />
                         </div>
                         <div className="text-[11px]">
-                            <p className="text-slate-300 font-bold">集群状态正常</p>
-                            <p className="text-slate-500">已连接 3 个采集节点</p>
+                            <p className="text-slate-300 font-bold">服务状态正常</p>
+                            <p className="text-slate-500">后端服务已连接</p>
                         </div>
                     </div>
                 </div>
@@ -163,9 +280,17 @@ const App = () => {
                                 placeholder="在此输入搜索关键词 (支持 Regex)..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                                 className="w-full bg-[#0d1117] border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
                             />
                         </div>
+
+                        <button 
+                            onClick={handleSearch}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            搜索
+                        </button>
 
                         <div className="h-8 w-px bg-slate-800"></div>
 
@@ -173,7 +298,7 @@ const App = () => {
                             {["ALL", "INFO", "WARN", "ERROR"].map(lvl => (
                                 <button
                                     key={lvl}
-                                    onClick={() => setFilterLevel(lvl)}
+                                    onClick={() => handleFilterChange(lvl)}
                                     className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${filterLevel === lvl ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
                                 >
                                     {lvl}
@@ -183,30 +308,50 @@ const App = () => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <button onClick={fetchLogs} className="p-2.5 text-slate-400 hover:bg-slate-800 rounded-xl transition-colors">
+                        <button onClick={loadLogs} className="p-2.5 text-slate-400 hover:bg-slate-800 rounded-xl transition-colors">
                             <RefreshCw size={18} className={isLoading ? "animate-spin text-indigo-400" : ""} />
                         </button>
                         <button className="flex items-center gap-2 bg-white text-black px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all">
-                            <Download size={16} /> 导出日志
+                            <Download size={16} /> 导出当前日志
                         </button>
                     </div>
                 </div>
 
+                {/* 错误提示 */}
+                {error && (
+                    <div className="bg-red-900/30 border-l-4 border-red-500 p-3 m-4 rounded">
+                        <div className="flex items-center">
+                            <span className="text-red-400 mr-2">⚠️</span>
+                            <span className="text-red-300 text-sm">{error}</span>
+                        </div>
+                    </div>
+                )}
+
                 {/* 日志视图 */}
                 <div className="flex-1 overflow-hidden flex flex-col bg-[#0d1117]">
                     <div className="flex-1 overflow-y-auto px-4 py-2 font-mono text-[13px] scrollbar-thin scrollbar-thumb-slate-800" ref={scrollRef}>
-                        {filteredLogs.length > 0 ? (
+                        {isLoading && filteredLogs.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4">
+                                <div className="p-6 bg-slate-900/50 rounded-full">
+                                    <RefreshCw size={48} className="opacity-20 animate-spin" />
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-lg font-bold text-slate-500">正在加载日志...</p>
+                                    <p className="text-sm">请稍候，正在查询日志数据</p>
+                                </div>
+                            </div>
+                        ) : filteredLogs.length > 0 ? (
                             filteredLogs.map((log) => (
                                 <div key={log.id} className="group border-b border-slate-900/50 last:border-0">
                                     <div
-                                        onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
+                                        onClick={() => toggleExpand(log.id)}
                                         className={`flex items-start gap-4 p-2 rounded-md transition-all cursor-pointer hover:bg-slate-800/30 ${expandedLog === log.id ? 'bg-slate-800/50' : ''}`}
                                     >
                                         <span className="text-slate-700 shrink-0 w-8 text-right select-none">{log.id + 1}</span>
-                                        <span className="text-slate-500 shrink-0 select-none">{log.time?.split(' ')[1] || '--'}</span>
+                                        <span className="text-slate-500 shrink-0 select-none">{log.time?.split(' ')[1]?.substring(0, 8) || '--'}</span>
                                         <span className={`shrink-0 font-bold px-1.5 rounded text-[10px] ${log.level === 'ERROR' ? 'text-red-400 bg-red-400/10' : log.level === 'WARN' ? 'text-yellow-400 bg-yellow-400/10' : 'text-emerald-400 bg-emerald-400/10'}`}>
-                      {log.level}
-                    </span>
+                                            {log.level}
+                                        </span>
                                         <span className="text-indigo-400/80 truncate max-w-[120px] shrink-0">[{log.thread}]</span>
                                         <span className="text-slate-300 flex-1 break-words">{log.msg}</span>
                                         <ChevronDown size={14} className={`text-slate-600 transition-transform ${expandedLog === log.id ? 'rotate-180' : ''}`} />
@@ -221,7 +366,7 @@ const App = () => {
                                                     <span className="text-slate-500">类: <span className="text-slate-300 font-mono">{log.className}</span></span>
                                                 </div>
                                                 <button className="text-slate-500 hover:text-white flex items-center gap-1 text-[10px]">
-                                                    <Copy size={12} /> 复制详情
+                                                    <span className="material-symbols-outlined text-xs">content_copy</span> 复制详情
                                                 </button>
                                             </div>
                                             <div className="space-y-3">
@@ -232,11 +377,11 @@ const App = () => {
                                                 {tryFormatJson(log.msg) && (
                                                     <div className="bg-[#0d1117] p-3 rounded-md border border-indigo-500/20">
                                                         <p className="text-[10px] font-bold text-indigo-400 uppercase mb-2 flex items-center gap-2">
-                                                            <Code size={12} /> JSON Formatted
+                                                            <span className="material-symbols-outlined text-xs">code</span> JSON Formatted
                                                         </p>
                                                         <pre className="text-emerald-400/90 text-xs overflow-x-auto">
-                                  {tryFormatJson(log.msg)}
-                               </pre>
+                                                            {tryFormatJson(log.msg)}
+                                                        </pre>
                                                     </div>
                                                 )}
                                             </div>
@@ -244,7 +389,7 @@ const App = () => {
                                     )}
                                 </div>
                             ))
-                        ) : (
+                        ) : !isLoading ? (
                             <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4">
                                 <div className="p-6 bg-slate-900/50 rounded-full">
                                     <Search size={48} className="opacity-20" />
@@ -254,7 +399,7 @@ const App = () => {
                                     <p className="text-sm">尝试调整时间范围或关键词</p>
                                 </div>
                             </div>
-                        )}
+                        ) : null}
                     </div>
                 </div>
 
@@ -266,12 +411,12 @@ const App = () => {
                             <span className="text-[10px] font-bold text-slate-500 uppercase">Stream: Connected</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Server size={12} className="text-slate-500" />
+                            <span className="material-symbols-outlined text-xs">storage</span>
                             <span className="text-[10px] font-bold text-slate-500 uppercase italic">/data/logs/task-center/task-center-info.log</span>
                         </div>
                     </div>
                     <div className="text-[10px] font-mono text-slate-600">
-                        {filteredLogs.length} Lines Displayed | 100MB Per File | 0.4s Query
+                        {filteredLogs.length} Lines Displayed | 100MB Per File | Real-time Query
                     </div>
                 </div>
             </div>

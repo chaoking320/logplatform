@@ -33,3 +33,5 @@ build/
 .vscode/
 .mvn/wrapper/maven-wrapper.properties
 src/main/resources/application.properties
+front/node_modules
+src/main/java/log/tsuperman/com/logplatform/data/logs
