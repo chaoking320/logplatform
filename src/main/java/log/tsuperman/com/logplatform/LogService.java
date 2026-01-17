@@ -1,6 +1,7 @@
 package log.tsuperman.com.logplatform;
 
 import log.tsuperman.com.logplatform.config.LogPlatformProperties;
+import org.apache.logging.log4j.util.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -34,25 +35,36 @@ public class LogService {
      * @param keyword 搜索词
      * @param startTime 格式 HH:mm:ss
      * @param endTime 格式 HH:mm:ss
+     * @param fileName 要查询的文件名（可选）
      *
      * 日志格式为：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:06:00.714 INFO 6762 [xxl-job, JobThread-11-1767852360014] com.***.***.TroubleSubmitJob 具体日志信息
      */
-    public List<String> queryLogs(String date, String keyword, String startTime, String endTime) throws IOException {
+    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName) throws IOException {
         List<String> results = new ArrayList<>();
+
+        if (Strings.isEmpty(fileName)){
+            return results;
+        }
 
         // 获取当前日期
         String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         
         // 1. 寻找匹配的文件：task-center-info.log (仅当天) 或 task-center-info.2026-01-14.*.log (历史日期)
         File logDir = new File(properties.getFullLogPath());
-        File[] files = logDir.listFiles((dir, name) ->
-                // 如果查询的是当天，则包含当前活动日志文件；否则只查找历史日志文件
-                (date.equals(currentDate) && name.equals(properties.getLogPrefix() + ".log")) || 
-                (name.contains(date) && name.startsWith(properties.getLogPrefix()) && name.endsWith(".log"))
-        );
+        File[] files = logDir.listFiles((dir, name) -> {
+            // 如果指定了文件名，只查找该文件
+            if (fileName != null && !fileName.isEmpty()) {
+                return name.equals(fileName);
+            }
+            
+            // 否则按照原有逻辑查找
+            return (date.equals(currentDate) && name.equals(properties.getLogPrefix() + ".log")) || 
+                   (name.contains(date) && name.startsWith(properties.getLogPrefix()) && name.endsWith(".log"));
+        });
 
         if (files == null || files.length == 0) {
-            System.out.println("未找到匹配的日志文件，路径：" + properties.getFullLogPath() + "，日期：" + date);
+            System.out.println("未找到匹配的日志文件，路径：" + properties.getFullLogPath() + "，日期：" + date + 
+                              (fileName != null ? "，文件名：" + fileName : ""));
             return results;
         }
 
@@ -85,6 +97,117 @@ public class LogService {
         
         System.out.println("总共找到 " + results.size() + " 条匹配的日志");
         return results;
+    }
+    
+    /**
+     * 重载方法，保留向后兼容性
+     */
+    public List<String> queryLogs(String date, String keyword, String startTime, String endTime) throws IOException {
+        return queryLogs(date, keyword, startTime, endTime, null);
+    }
+    
+    /**
+     * 获取指定日期下的日志文件列表及其时间范围
+     * @param date 格式 yyyy-MM-dd
+     * @return 包含文件信息和时间范围的列表
+     */
+    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date) {
+        List<LogFileWithTimeRange> result = new ArrayList<>();
+        String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+
+        File logDir = new File(properties.getFullLogPath());
+        File[] files = logDir.listFiles((dir, name) ->
+                // 如果查询的是当天，则包含当前活动日志文件；否则只查找历史日志文件
+                (date.equals(currentDate) && name.equals(properties.getLogPrefix() + ".log")) ||
+                (name.contains(date) && name.startsWith(properties.getLogPrefix()) && name.endsWith(".log"))
+        );
+
+        if (files == null || files.length == 0) {
+            System.out.println("未找到匹配的日志文件，路径：" + properties.getFullLogPath() + "，日期：" + date);
+            return result;
+        }
+
+        // 按文件名排序
+        Arrays.sort(files, this::compareLogFileNames);
+
+        for (File file : files) {
+            LogFileWithTimeRange fileInfo = analyzeFileTimeRange(file);
+            if (fileInfo != null) {
+                result.add(fileInfo);
+            }
+        }
+
+        return result;
+    }
+    
+    /**
+     * 分析单个文件的时间范围
+     */
+    private LogFileWithTimeRange analyzeFileTimeRange(File file) {
+        LogFileWithTimeRange fileInfo = new LogFileWithTimeRange();
+        fileInfo.setFileName(file.getName());
+        
+        String earliestTime = null;
+        String latestTime = null;
+        
+        try (Stream<String> lines = Files.lines(file.toPath())) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                Matcher matcher = TIMESTAMP_PATTERN.matcher(line);
+                if (matcher.find()) {
+                    String timestamp = matcher.group(1); // 格式：yyyy-MM-dd HH:mm:ss
+                    
+                    if (earliestTime == null || timestamp.compareTo(earliestTime) < 0) {
+                        earliestTime = timestamp;
+                    }
+                    
+                    if (latestTime == null || timestamp.compareTo(latestTime) > 0) {
+                        latestTime = timestamp;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("读取文件失败: " + file.getAbsolutePath() + ", 错误: " + e.getMessage());
+            return null;
+        }
+        
+        fileInfo.setEarliestTime(earliestTime != null ? earliestTime : "未知");
+        fileInfo.setLatestTime(latestTime != null ? latestTime : "未知");
+        
+        return fileInfo;
+    }
+    
+    /**
+     * 内部类，用于存储文件信息及其时间范围
+     */
+    public static class LogFileWithTimeRange {
+        private String fileName;
+        private String earliestTime;
+        private String latestTime;
+        
+        // Getters and Setters
+        public String getFileName() {
+            return fileName;
+        }
+        
+        public void setFileName(String fileName) {
+            this.fileName = fileName;
+        }
+        
+        public String getEarliestTime() {
+            return earliestTime;
+        }
+        
+        public void setEarliestTime(String earliestTime) {
+            this.earliestTime = earliestTime;
+        }
+        
+        public String getLatestTime() {
+            return latestTime;
+        }
+        
+        public void setLatestTime(String latestTime) {
+            this.latestTime = latestTime;
+        }
     }
     
     /**

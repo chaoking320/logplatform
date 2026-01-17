@@ -21,6 +21,7 @@ public class LogController {
      * @param keyword 搜索关键词
      * @param startTime 开始时间，格式：HH:mm
      * @param endTime 结束时间，格式：HH:mm
+     * @param file 要查询的文件名（可选）
      * @return 日志列表
      */
     @GetMapping("/query")
@@ -28,14 +29,15 @@ public class LogController {
             @RequestParam String date,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "00:00") String startTime,
-            @RequestParam(defaultValue = "23:59") String endTime) {
+            @RequestParam(defaultValue = "23:59") String endTime,
+            @RequestParam(required = false) String file) { // 新增file参数
         
         try {
             // 将时间格式从 HH:mm 转换为 HH:mm:ss
             String startTimeSec = startTime + ":00";
             String endTimeSec = endTime + ":59";
             
-            List<String> logs = logService.queryLogs(date, keyword, startTimeSec, endTimeSec);
+            List<String> logs = logService.queryLogs(date, keyword, startTimeSec, endTimeSec, file); // 传递file参数
             return ApiResponse.success(logs);
         } catch (Exception e) {
             e.printStackTrace();
@@ -54,6 +56,20 @@ public class LogController {
         } catch (Exception e) {
             e.printStackTrace();
             return ApiResponse.error("获取日期列表失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取指定日期下的日志文件列表及其时间范围
+     */
+    @GetMapping("/files/{date}")
+    public ApiResponse<List<LogService.LogFileWithTimeRange>> getDateLogFiles(@PathVariable String date) {
+        try {
+            List<LogService.LogFileWithTimeRange> files = logService.getDateLogFilesWithTimeRange(date);
+            return ApiResponse.success(files);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("获取日期下的文件列表失败: " + e.getMessage());
         }
     }
     
