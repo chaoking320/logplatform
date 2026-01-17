@@ -198,19 +198,13 @@ const App = () => {
                         <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
                             <Calendar size={14} /> 检索日期
                         </label>
-                        <select
+                        <input
+                            type="date"
                             value={selectedDate}
                             onChange={(e) => handleDateChange(e.target.value)}
                             className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                        >
-                            {availableDates.length > 0 ? (
-                                availableDates.sort().reverse().map(date => (
-                                    <option key={date} value={date}>{date}</option>
-                                ))
-                            ) : (
-                                <option value="">暂无可用日期</option>
-                            )}
-                        </select>
+                            max={new Date().toISOString().split('T')[0]} // 限制最大日期为今天
+                        />
                     </div>
 
                     <div className="space-y-2">
@@ -240,7 +234,7 @@ const App = () => {
                                 availableDates
                                     .filter(date => date === selectedDate)
                                     .map(date => (
-                                        <div key={date} className="flex items-center justify-between p-3 rounded-lg border bg-indigo-500/10 border-indigo-500/50 text-indigo-300">
+                                        <div key={`${date}-info`} className="flex items-center justify-between p-3 rounded-lg border bg-indigo-500/10 border-indigo-500/50 text-indigo-300">
                                             <div className="flex items-center gap-2">
                                                 <FileText size={14} />
                                                 <span className="text-xs font-medium">task-center-info.{date}.log</span>
@@ -250,6 +244,16 @@ const App = () => {
                                     ))
                             ) : (
                                 <div className="text-xs text-slate-500 p-2">暂无可检索的日志文件</div>
+                            )}
+                            {/* 添加固定的当天日志文件 */}
+                            {selectedDate === new Date().toISOString().split('T')[0] && (
+                                <div key="today-info" className="flex items-center justify-between p-3 rounded-lg border bg-indigo-500/10 border-indigo-500/50 text-indigo-300">
+                                    <div className="flex items-center gap-2">
+                                        <FileText size={14} />
+                                        <span className="text-xs font-medium">task-center-info.log</span>
+                                    </div>
+                                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                                </div>
                             )}
                         </div>
                     </div>
