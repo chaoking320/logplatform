@@ -3,6 +3,42 @@ import { Search, Calendar, Clock, FileText, ChevronDown, Download, RefreshCw, Te
 
 // --- 日志行解析器 ---
 // 针对：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job...]
+// const parseLogLine = (raw, id) => {
+//     const regex = /^\[(.*?)] \[(.*?)] (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (\w+) (\d+) \[(.*?)] (.*?) (.*)$/;
+//     const match = raw.match(regex);
+//     if (match) {
+//         return {
+//             id,
+//             node: match[1],
+//             traceId: match[2],
+//             time: match[3],
+//             level: match[4],
+//             pid: match[5],
+//             thread: match[6],
+//             className: match[7],
+//             msg: match[8],
+//             raw
+//         };
+//     }
+//     return { id, raw, time: "Unknown", level: "OTHER", msg: raw };
+// };
+
+// // --- JSON 格式化工具 ---
+// const tryFormatJson = (text) => {
+//     try {
+//         const jsonMatch = text.match(/\{.*\}|\[.*\]/);
+//         if (jsonMatch) {
+//             const obj = JSON.parse(jsonMatch[0]);
+//             return JSON.stringify(obj, null, 2);
+//         }
+//     } catch (e) {
+//         return null;
+//     }
+//     return null;
+// };
+
+// --- 日志行解析器 ---
+// 针对：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job...]
 const parseLogLine = (raw, id) => {
     const regex = /^\[(.*?)] \[(.*?)] (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (\w+) (\d+) \[(.*?)] (.*?) (.*)$/;
     const match = raw.match(regex);
@@ -84,6 +120,22 @@ const fetchAvailableDates = async () => {
     }
 };
 
+// --- 获取指定日期下的日志文件列表 ---
+const fetchDateLogFiles = async (date) => {
+    try {
+        const response = await fetch(`/api/logs/files/${date}`);
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch date log files');
+        }
+    } catch (error) {
+        console.error('Error fetching date log files:', error);
+        return [];
+    }
+};
+
 // --- 主组件 ---
 const App = () => {
     const [logs, setLogs] = useState([]);
@@ -95,10 +147,13 @@ const App = () => {
     const [filterLevel, setFilterLevel] = useState("ALL");
     const [expandedLog, setExpandedLog] = React.useState(null);
     const [error, setError] = React.useState(null);
+    const [selectedFile, setSelectedFile] = useState(null); // 新增：记录选择的文件
     const scrollRef = useRef(null);
 
     // 获取可用日期列表
     const [availableDates, setAvailableDates] = useState([]);
+    // 获取指定日期下的日志文件列表
+    const [dateLogFiles, setDateLogFiles] = useState([]);
 
     useEffect(() => {
         // 获取可用日期
@@ -119,14 +174,54 @@ const App = () => {
         loadAvailableDates();
     }, []);
 
+    // 获取选定日期下的日志文件列表
+    useEffect(() => {
+        const loadDateLogFiles = async () => {
+            if (selectedDate) {
+                try {
+                    const files = await fetchDateLogFiles(selectedDate);
+                    setDateLogFiles(files);
+                } catch (error) {
+                    console.error('Error fetching date log files:', error);
+                    setDateLogFiles([]);
+                }
+            }
+        };
+
+        loadDateLogFiles();
+    }, [selectedDate]);
+
     // 加载日志数据
     const loadLogs = async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const logData = await fetchLogs(selectedDate, searchQuery, startTime, endTime);
-            const parsedLogs = logData.map((raw, index) => parseLogLine(raw, index));
-            setLogs(parsedLogs);
+            // 如果有选择特定文件，则传递文件参数
+            let url = `/api/logs/query?date=${selectedDate}`;
+            if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
+            if (startTime) url += `&startTime=${startTime}`;
+            if (endTime) url += `&endTime=${endTime}`;
+            if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`; // 添加文件参数
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                const logData = data.data || [];
+                const parsedLogs = logData.map((raw, index) => parseLogLine(raw, index));
+                setLogs(parsedLogs);
+            } else {
+                throw new Error(data.message || 'Failed to fetch logs');
+            }
         } catch (error) {
             console.error('Error loading logs:', error);
             setError(error.message);
@@ -158,6 +253,12 @@ const App = () => {
     // 处理日期选择
     const handleDateChange = (date) => {
         setSelectedDate(date);
+        setSelectedFile(null); // 清空之前选择的文件
+    };
+
+    // 处理文件选择
+    const handleFileSelect = (fileName) => {
+        setSelectedFile(fileName === selectedFile ? null : fileName);
     };
 
     // 处理时间范围变化
@@ -229,31 +330,38 @@ const App = () => {
 
                     <div className="pt-4 border-t border-slate-800">
                         <label className="text-[11px] font-bold text-slate-500 uppercase mb-3 block">文件分片检索</label>
-                        <div className="space-y-2">
-                            {availableDates.length > 0 ? (
-                                availableDates
-                                    .filter(date => date === selectedDate)
-                                    .map(date => (
-                                        <div key={`${date}-info`} className="flex items-center justify-between p-3 rounded-lg border bg-indigo-500/10 border-indigo-500/50 text-indigo-300">
-                                            <div className="flex items-center gap-2">
-                                                <FileText size={14} />
-                                                <span className="text-xs font-medium">task-center-info.{date}.log</span>
+                        <div className="space-y-2 max-h-96 overflow-y-auto"> {/* 增加高度，超过10个文件才出现滚动条 */}
+                            {dateLogFiles.length > 0 ? (
+                                dateLogFiles.map((fileInfo, index) => {
+                                    const isSelected = selectedFile === fileInfo.fileName;
+                                    return (
+                                        <div 
+                                            key={index}
+                                            className={`flex flex-col p-2 rounded-lg border cursor-pointer transition-all ${
+                                                isSelected 
+                                                    ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100' 
+                                                    : 'bg-slate-800/30 border-slate-700 hover:bg-slate-700/50'
+                                            }`}
+                                            onClick={() => handleFileSelect(fileInfo.fileName)}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <FileText size={12} /> {/* 减小图标尺寸 */}
+                                                    <span className="text-xs font-mono truncate max-w-[140px]">{fileInfo.fileName}</span>
+                                                </div>
+                                                {isSelected && (
+                                                    <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+                                                )}
                                             </div>
-                                            <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                                            <div className="mt-1 text-[9px] text-slate-400"> {/* 减小文字尺寸 */}
+                                                <div>开始: {fileInfo.earliestTime ? fileInfo.earliestTime.split(' ')[1] : '未知'}</div>
+                                                <div>结束: {fileInfo.latestTime ? fileInfo.latestTime.split(' ')[1] : '未知'}</div>
+                                            </div>
                                         </div>
-                                    ))
+                                    );
+                                })
                             ) : (
                                 <div className="text-xs text-slate-500 p-2">暂无可检索的日志文件</div>
-                            )}
-                            {/* 添加固定的当天日志文件 */}
-                            {selectedDate === new Date().toISOString().split('T')[0] && (
-                                <div key="today-info" className="flex items-center justify-between p-3 rounded-lg border bg-indigo-500/10 border-indigo-500/50 text-indigo-300">
-                                    <div className="flex items-center gap-2">
-                                        <FileText size={14} />
-                                        <span className="text-xs font-medium">task-center-info.log</span>
-                                    </div>
-                                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
-                                </div>
                             )}
                         </div>
                     </div>
