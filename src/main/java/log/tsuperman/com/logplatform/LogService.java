@@ -40,10 +40,14 @@ public class LogService {
     public List<String> queryLogs(String date, String keyword, String startTime, String endTime) throws IOException {
         List<String> results = new ArrayList<>();
 
-        // 1. 寻找匹配的文件：task-center-info.log (当天) 或 task-center-info.2026-01-14.*.log
+        // 获取当前日期
+        String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        
+        // 1. 寻找匹配的文件：task-center-info.log (仅当天) 或 task-center-info.2026-01-14.*.log (历史日期)
         File logDir = new File(properties.getFullLogPath());
         File[] files = logDir.listFiles((dir, name) ->
-                name.equals(properties.getLogPrefix() + ".log") || 
+                // 如果查询的是当天，则包含当前活动日志文件；否则只查找历史日志文件
+                (date.equals(currentDate) && name.equals(properties.getLogPrefix() + ".log")) || 
                 (name.contains(date) && name.startsWith(properties.getLogPrefix()) && name.endsWith(".log"))
         );
 
