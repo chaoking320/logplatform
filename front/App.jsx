@@ -1,24 +1,71 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Calendar, Clock, FileText, ChevronDown, Download, RefreshCw, Terminal, CheckCircle2, Server, Database } from 'lucide-react';
 
+// 自定义滚动条样式
+const scrollbarStyles = `
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(30, 41, 59, 0.3);
+    border-radius: 3px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.6);
+    border-radius: 3px;
+    transition: background 0.2s ease;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.8);
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-corner {
+    background: rgba(30, 41, 59, 0.3);
+  }
+  
+  /* Firefox */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.6) rgba(30, 41, 59, 0.3);
+  }
+`;
+
+// 将样式注入到页面
+if (typeof document !== 'undefined') {
+  const styleElement = document.createElement('style');
+  styleElement.textContent = scrollbarStyles;
+  document.head.appendChild(styleElement);
+}
+
+// --- 获取服务器配置的基础函数（不经过getApiUrl处理，避免循环依赖）---
+const fetchServerConfig = async () => {
+    const response = await fetch('/api/config/servers');
+    const data = await response.json();
+    if (data.success) {
+        return data.data || [];
+    } else {
+        throw new Error(data.message || 'Failed to fetch server config');
+    }
+};
+
 // --- API 请求封装 ---
 const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) => {
-  // 如果选择了远程服务器，直接使用远程服务器的API地址
+  // 如果选择了远程服务器，使用远程服务器的API地址
   if (selectedServer) {
     try {
-      const serverResponse = await fetch('/api/config/servers');
-      const serverResult = await serverResponse.json();
-      
-      if (serverResult.success) {
-        const server = serverResult.data.find(s => s.id === selectedServer);
-        if (server) {
-          // 直接访问远程服务器，绕过本地代理
-          return `http://${server.host}/logapi${endpoint}`;
-        } else {
-          throw new Error(`找不到服务器配置: ${selectedServer}`);
-        }
+      const servers = await fetchServerConfig();
+      const server = servers.find(s => s.id === selectedServer);
+      if (server) {
+        // 远程服务器：如果nginx配置是 proxy_pass http://127.0.0.1:9876; (没有斜杠)
+        // 那么 /logapi/api/logs/query 会被传递给后端作为完整路径
+        // 所以我们需要直接使用 /logapi + endpoint，让后端处理 /logapi 前缀
+        return `http://${server.host}/logapi${endpoint}`;
       } else {
-        throw new Error('获取服务器配置失败');
+        throw new Error(`找不到服务器配置: ${selectedServer}`);
       }
     } catch (error) {
       console.error('Error fetching server config:', error);
@@ -26,8 +73,7 @@ const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) =>
     }
   }
 
-  // 对于本地服务器，使用代理路径
-  // Vite 会将 /api 代理到 http://172.28.242.22/logapi/api
+  // 本地服务器：通过nginx的/api/代理或vite代理，直接使用endpoint
   return endpoint;
 };
 
@@ -37,7 +83,8 @@ const fetchLogs = async (
     startTime,
     endTime,
     selectedServer = null,
-    selectedApp = null
+    selectedApp = null,
+    logType = 'all'
 ) => {
     try {
         const baseUrl = await getApiUrl('/api/logs/query', selectedServer, selectedApp);
@@ -45,6 +92,7 @@ const fetchLogs = async (
         
         if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
         if (selectedApp) url += `&appId=${selectedApp}`;
+        if (logType !== 'all') url += `&type=${logType}`;
 
         const response = await fetch(url, {
             method: 'GET',
@@ -90,12 +138,16 @@ const fetchAvailableDates = async (selectedServer = null, selectedApp = null) =>
 };
 
 // --- 获取指定日期下的日志文件列表 ---
-const fetchDateLogFiles = async (date, selectedServer = null, selectedApp = null) => {
+const fetchDateLogFiles = async (date, selectedServer = null, selectedApp = null, logType = 'all') => {
     try {
         const baseUrl = await getApiUrl(`/api/logs/files/${date}`, selectedServer, selectedApp);
         let url = baseUrl;
-        if (selectedApp) url += `?appId=${selectedApp}`;
-        
+        const params = [];
+        if (selectedApp) params.push(`appId=${selectedApp}`);
+        if (logType !== 'all') params.push(`type=${logType}`); // 添加类型参数
+            
+        if (params.length > 0) url += '?' + params.join('&');
+            
         const response = await fetch(url);
         console.log('response', response)
         const data = await response.json();
@@ -113,14 +165,7 @@ const fetchDateLogFiles = async (date, selectedServer = null, selectedApp = null
 // --- 获取服务器列表 ---
 const fetchServers = async () => {
     try {
-        const baseUrl = await getApiUrl('/api/config/servers');
-        const response = await fetch(baseUrl);
-        const data = await response.json();
-        if (data.success) {
-            return data.data || [];
-        } else {
-            throw new Error(data.message || 'Failed to fetch servers');
-        }
+        return await fetchServerConfig();
     } catch (error) {
         console.error('Error fetching servers:', error);
         return [];
@@ -190,10 +235,10 @@ const App = () => {
     const [startTime, setStartTime] = useState("00:00");
     const [endTime, setEndTime] = useState("23:59");
     const [searchQuery, setSearchQuery] = useState("");
-    const [filterLevel, setFilterLevel] = useState("ALL");
+    const [filterLevel, setFilterLevel] = useState("INFO"); // 这里改名为filterType更合适，但我们保持原名
     const [expandedLog, setExpandedLog] = React.useState(null);
     const [error, setError] = React.useState(null);
-    const [selectedFile, setSelectedFile] = useState(null); // 新增：记录选择的文件
+    const [selectedFile, setSelectedFile] = useState(null);
     const [servers, setServers] = useState([]);
     const [apps, setApps] = useState([]);
     const [selectedServer, setSelectedServer] = useState(null);
@@ -272,7 +317,14 @@ const App = () => {
         const loadDateLogFiles = async () => {
             if (selectedDate) {
                 try {
-                    const files = await fetchDateLogFiles(selectedDate, selectedServer, selectedApp);
+                    let logType = 'all';
+                    if (filterLevel === 'INFO') {
+                        logType = 'info';
+                    } else if (filterLevel === 'ERROR') {
+                        logType = 'error';
+                    }
+                    
+                    const files = await fetchDateLogFiles(selectedDate, selectedServer, selectedApp, logType);
                     setDateLogFiles(files);
                 } catch (error) {
                     console.error('Error fetching date log files:', error);
@@ -282,19 +334,35 @@ const App = () => {
         };
 
         loadDateLogFiles();
-    }, [selectedDate, selectedServer, selectedApp]); // 当服务器、应用或日期改变时重新获取文件列表
+    }, [selectedDate, selectedServer, selectedApp, filterLevel]); // 添加filterLevel到依赖数组
 
     // 加载日志数据
     const loadLogs = async () => {
+        // 如果没有选择特定文件，则不执行后端请求
+        if (!selectedFile) {
+            setLogs([]);
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
         try {
+            // 根据过滤级别确定日志类型
+            let logType = 'all';
+            if (filterLevel === 'INFO') {
+                logType = 'info';
+            } else if (filterLevel === 'ERROR') {
+                logType = 'error';
+            }
+
             const baseUrl = await getApiUrl('/api/logs/query', selectedServer, selectedApp);
             let url = `${baseUrl}?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
             
             if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
             if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;
             if (selectedApp) url += `&appId=${selectedApp}`;
+            if (logType !== 'all') url += `&type=${logType}`;
 
             const response = await fetch(url, {
                 method: 'GET',
@@ -377,9 +445,9 @@ const App = () => {
         }
     };
 
-    // 处理过滤级别变化
-    const handleFilterChange = (level) => {
-        setFilterLevel(level);
+    // 处理过滤类型变化
+    const handleFilterChange = (type) => {
+        setFilterLevel(type);
     };
 
     // 处理展开/折叠日志详情
@@ -401,17 +469,17 @@ const App = () => {
                     </div>
                 </div>
 
-                <div className="p-5 space-y-6 flex-1 overflow-y-auto">
+                <div className="p-4 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
 
                     {/* 服务器选择 */}
                     <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                            <Server size={14} /> 服务器
+                        <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                            <Server size={12} /> 服务器
                         </label>
                         <select
                             value={selectedServer || ''}
                             onChange={(e) => handleServerChange(e.target.value)}
-                            className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                         >
                             <option value="">本地服务器</option>
                             {servers.map(server => (
@@ -425,13 +493,13 @@ const App = () => {
                     {/* 应用选择 */}
                     {selectedServer && (
                         <div className="space-y-2">
-                            <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                                <Database size={14} /> 应用
+                            <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                                <Database size={12} /> 应用
                             </label>
                             <select
                                 value={selectedApp || ''}
                                 onChange={(e) => handleAppChange(e.target.value)}
-                                className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                                 disabled={!selectedServer}
                             >
                                 <option value="">请选择应用</option>
@@ -445,21 +513,21 @@ const App = () => {
                     )}
 
                     <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                            <Calendar size={14} /> 检索日期
+                        <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                            <Calendar size={12} /> 检索日期
                         </label>
                         <input
                             type="date"
                             value={selectedDate}
                             onChange={(e) => handleDateChange(e.target.value)}
-                            className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                            className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                             max={new Date().toISOString().split('T')[0]} // 限制最大日期为今天
                         />
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                            <Clock size={14} /> 时间范围:
+                        <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                            <Clock size={12} /> 时间范围:
                         </label>
                         <div className="grid grid-cols-2 gap-2">
                             <input 
@@ -477,16 +545,16 @@ const App = () => {
                         </div>
                     </div>
 
-                    <div className="pt-4 border-t border-slate-800">
-                        <label className="text-[11px] font-bold text-slate-500 uppercase mb-3 block">文件分片检索</label>
-                        <div className="space-y-2 max-h-96 overflow-y-auto"> {/* 增加高度，超过10个文件才出现滚动条 */}
+                    <div className="pt-3 border-t border-slate-800">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">文件分片检索</label>
+                        <div className="space-y-1 max-h-80 overflow-y-auto custom-scrollbar"> {/* 减少高度和间距 */}
                             {dateLogFiles.length > 0 ? (
                                 dateLogFiles.map((fileInfo, index) => {
                                     const isSelected = selectedFile === fileInfo.fileName;
                                     return (
                                         <div 
                                             key={index}
-                                            className={`flex flex-col p-2 rounded-lg border cursor-pointer transition-all ${
+                                            className={`flex flex-col p-2 rounded-md border cursor-pointer transition-all ${
                                                 isSelected 
                                                     ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100' 
                                                     : 'bg-slate-800/30 border-slate-700 hover:bg-slate-700/50'
@@ -495,14 +563,14 @@ const App = () => {
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <FileText size={12} /> {/* 减小图标尺寸 */}
-                                                    <span className="text-xs font-mono truncate max-w-[140px]">{fileInfo.fileName}</span>
+                                                    <FileText size={11} /> {/* 减小图标尺寸 */}
+                                                    <span className="text-[11px] font-mono truncate max-w-[130px]">{fileInfo.fileName}</span>
                                                 </div>
                                                 {isSelected && (
-                                                    <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
                                                 )}
                                             </div>
-                                            <div className="mt-1 text-[9px] text-slate-400"> {/* 减小文字尺寸 */}
+                                            <div className="mt-1 text-[8px] text-slate-400"> {/* 减小文字尺寸 */}
                                                 <div>开始: {fileInfo.earliestTime ? fileInfo.earliestTime.split(' ')[1] : '未知'}</div>
                                                 <div>结束: {fileInfo.latestTime ? fileInfo.latestTime.split(' ')[1] : '未知'}</div>
                                             </div>
@@ -510,7 +578,7 @@ const App = () => {
                                     );
                                 })
                             ) : (
-                                <div className="text-xs text-slate-500 p-2">暂无可检索的日志文件</div>
+                                <div className="text-[11px] text-slate-500 p-2">暂无可检索的日志文件</div>
                             )}
                         </div>
                     </div>
@@ -556,13 +624,13 @@ const App = () => {
                         <div className="h-8 w-px bg-slate-800"></div>
 
                         <div className="flex gap-1 bg-[#0d1117] p-1 rounded-lg border border-slate-800">
-                            {["ALL", "INFO", "WARN", "ERROR"].map(lvl => (
+                            {[ "INFO", "ERROR","ALL"].map(type => (
                                 <button
-                                    key={lvl}
-                                    onClick={() => handleFilterChange(lvl)}
-                                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${filterLevel === lvl ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                                    key={type}
+                                    onClick={() => handleFilterChange(type)}
+                                    className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${filterLevel === type ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
                                 >
-                                    {lvl}
+                                    {type}
                                 </button>
                             ))}
                         </div>
@@ -590,7 +658,7 @@ const App = () => {
 
                 {/* 日志视图 */}
                 <div className="flex-1 overflow-hidden flex flex-col bg-[#0d1117]">
-                    <div className="flex-1 overflow-y-auto px-4 py-2 font-mono text-[13px] scrollbar-thin scrollbar-thumb-slate-800" ref={scrollRef}>
+                    <div className="flex-1 overflow-y-auto px-4 py-2 font-mono text-[13px] custom-scrollbar" ref={scrollRef}>
                         {isLoading && filteredLogs.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4">
                                 <div className="p-6 bg-slate-900/50 rounded-full">

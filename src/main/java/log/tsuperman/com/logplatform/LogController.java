@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 @RestController
-@RequestMapping("/api/logs")
+@RequestMapping({"/api/logs", "/logapi/api/logs"})  // 支持两种路径
 @CrossOrigin(origins = "*") // 开发阶段允许跨域，生产环境应配置具体的域名
 public class LogController {
 
@@ -42,18 +42,19 @@ public class LogController {
             @RequestParam(defaultValue = "00:00") String startTime,
             @RequestParam(defaultValue = "23:59") String endTime,
             @RequestParam(required = false) String file,
-            @RequestParam(required = false) String appId) {
+            @RequestParam(required = false) String appId,
+            @RequestParam(required = false, defaultValue = "all") String type) {
         
         try {
             System.out.println("收到日志查询请求 - 日期: " + date + ", 关键词: " + keyword + 
                              ", 开始时间: " + startTime + ", 结束时间: " + endTime + 
-                             ", 文件: " + file + ", 应用ID: " + appId);
+                             ", 文件: " + file + ", 应用ID: " + appId + ", 类型: " + type);
             
             // 将时间格式从 HH:mm 转换为 HH:mm:ss
             String startTimeSec = startTime + ":00";
             String endTimeSec = endTime + ":59";
             
-            List<String> logs = logService.queryLogs(date, keyword, startTimeSec, endTimeSec, file, appId);
+            List<String> logs = logService.queryLogs(date, keyword, startTimeSec, endTimeSec, file, appId, type);
             
             System.out.println("查询结果: 找到 " + logs.size() + " 条日志");
             
@@ -139,11 +140,12 @@ public class LogController {
     @GetMapping("/files/{date}")
     public ApiResponse<List<LogService.LogFileWithTimeRange>> getDateLogFiles(
             @PathVariable String date,
-            @RequestParam(required = false) String appId) {
+            @RequestParam(required = false) String appId,
+            @RequestParam(required = false, defaultValue = "all") String type) {
         try {
-            System.out.println("收到文件列表查询请求 - 日期: " + date + ", 应用ID: " + appId);
+            System.out.println("收到文件列表查询请求 - 日期: " + date + ", 应用ID: " + appId + ", 类型: " + type);
             
-            List<LogService.LogFileWithTimeRange> files = logService.getDateLogFilesWithTimeRange(date, appId);
+            List<LogService.LogFileWithTimeRange> files = logService.getDateLogFilesWithTimeRange(date, appId, type);
             
             System.out.println("文件列表查询结果: 找到 " + files.size() + " 个文件");
             for (LogService.LogFileWithTimeRange file : files) {

@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/config")
+@RequestMapping({"/api/config", "/logapi/api/config"})  // 支持两种路径
 @CrossOrigin(origins = "*")
 public class ConfigController {
 

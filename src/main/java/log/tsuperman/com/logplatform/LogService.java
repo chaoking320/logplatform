@@ -52,10 +52,11 @@ public class LogService {
      * @param endTime 格式 HH:mm:ss
      * @param fileName 要查询的文件名（可选）
      * @param appId 应用ID（可选，如果不提供则使用默认配置）
+     * @param logType 日志类型（info/error/all，可选，默认为all）
      *
      * 日志格式为：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:06:00.714 INFO 6762 [xxl-job, JobThread-11-1767852360014] com.***.***.TroubleSubmitJob 具体日志信息
      */
-    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName, String appId) throws IOException {
+    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName, String appId, String logType) throws IOException {
         List<String> results = new ArrayList<>();
 
         String logPath;
@@ -93,9 +94,37 @@ public class LogService {
                 return name.equals(fileName);
             }
             
-            // 否则按照原有逻辑查找所有匹配日期的文件
-            return (date.equals(currentDate) && name.equals(logPrefix + ".log")) || 
-                   (name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log"));
+            // 根据logType动态调整前缀匹配逻辑
+            boolean isCurrentDayFile = false;
+            boolean isHistoryFile = false;
+            
+            if (logType == null || logType.equalsIgnoreCase("all")) {
+                // 查找所有类型：既包含原前缀，也包含对应的error前缀
+                String basePrefix = logPrefix.replace("-info", ""); // 去掉-info后缀，得到基础前缀
+                
+                // 当天文件检查
+                isCurrentDayFile = date.equals(currentDate) && 
+                                 (name.equals(logPrefix + ".log") || 
+                                  name.equals(basePrefix + "-error.log"));
+                
+                // 历史文件检查
+                isHistoryFile = name.contains(date) && 
+                              (name.startsWith(logPrefix) || name.startsWith(basePrefix + "-error")) && 
+                              name.endsWith(".log");
+                              
+            } else if (logType.equalsIgnoreCase("info")) {
+                // 只查找info类型
+                isCurrentDayFile = date.equals(currentDate) && name.equals(logPrefix + ".log");
+                isHistoryFile = name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log");
+                
+            } else if (logType.equalsIgnoreCase("error")) {
+                // 查找error类型：将-info替换为-error
+                String errorPrefix = logPrefix.replace("-info", "-error");
+                isCurrentDayFile = date.equals(currentDate) && name.equals(errorPrefix + ".log");
+                isHistoryFile = name.contains(date) && name.startsWith(errorPrefix) && name.endsWith(".log");
+            }
+            
+            return isCurrentDayFile || isHistoryFile;
         });
 
         if (files == null || files.length == 0) {
@@ -128,7 +157,7 @@ public class LogService {
                             
                             return timeMatch && kwMatch;
                         })
-                        .limit(5000) // 单个文件最多返回 5000 行，防止前端卡死
+                        .limit(500) // 单个文件最多返回 5000 行，防止前端卡死
                         .collect(Collectors.toList());
 
                 results.addAll(matched);
@@ -146,23 +175,31 @@ public class LogService {
      * 重载方法，保留向后兼容性
      */
     public List<String> queryLogs(String date, String keyword, String startTime, String endTime) throws IOException {
-        return queryLogs(date, keyword, startTime, endTime, null, null);
+        return queryLogs(date, keyword, startTime, endTime, null, null, "all");
     }
     
     /**
      * 重载方法，兼容文件名参数
      */
     public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName) throws IOException {
-        return queryLogs(date, keyword, startTime, endTime, fileName, null);
+        return queryLogs(date, keyword, startTime, endTime, fileName, null, "all");
+    }
+    
+    /**
+     * 重载方法，兼容appId参数
+     */
+    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName, String appId) throws IOException {
+        return queryLogs(date, keyword, startTime, endTime, fileName, appId, "all");
     }
     
     /**
      * 获取指定日期下的日志文件列表及其时间范围
      * @param date 格式 yyyy-MM-dd
      * @param appId 应用ID（可选，如果不提供则使用默认配置）
+     * @param logType 日志类型（可选，info/error/all）
      * @return 包含文件信息和时间范围的列表
      */
-    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date, String appId) {
+    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date, String appId, String logType) {
         List<LogFileWithTimeRange> result = new ArrayList<>();
         String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
 
@@ -193,17 +230,49 @@ public class LogService {
             return result;
         }
 
-        System.out.println("查找日期 " + date + " 的日志文件，当前日期: " + currentDate);
+        System.out.println("查找日期 " + date + " 的日志文件，当前日期: " + currentDate + "，日志类型: " + logType);
 
         File[] files = logDir.listFiles((dir, name) -> {
-            boolean isCurrentDayFile = date.equals(currentDate) && name.equals(logPrefix + ".log");
-            boolean isHistoryFile = name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log");
+            // 根据logType动态调整前缀匹配逻辑
+            boolean matchesPrefix = false;
+            boolean isCurrentDayFile = false;
+            boolean isHistoryFile = false;
+            
+            if (logType == null || logType.equalsIgnoreCase("all")) {
+                // 查找所有类型：既包含原前缀，也包含对应的error前缀
+                String basePrefix = logPrefix.replace("-info", ""); // 去掉-info后缀，得到基础前缀
+                
+                // 当天文件检查
+                isCurrentDayFile = date.equals(currentDate) && 
+                                 (name.equals(logPrefix + ".log") || 
+                                  name.equals(basePrefix + "-error.log"));
+                
+                // 历史文件检查
+                isHistoryFile = name.contains(date) && 
+                              (name.startsWith(logPrefix) || name.startsWith(basePrefix + "-error")) && 
+                              name.endsWith(".log");
+                              
+            } else if (logType.equalsIgnoreCase("info")) {
+                // 只查找info类型
+                isCurrentDayFile = date.equals(currentDate) && name.equals(logPrefix + ".log");
+                isHistoryFile = name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log");
+                
+            } else if (logType.equalsIgnoreCase("error")) {
+                // 查找error类型：将-info替换为-error
+                String errorPrefix = logPrefix.replace("-info", "-error");
+                isCurrentDayFile = date.equals(currentDate) && name.equals(errorPrefix + ".log");
+                isHistoryFile = name.contains(date) && name.startsWith(errorPrefix) && name.endsWith(".log");
+            }
+            
+            boolean matches = isCurrentDayFile || isHistoryFile;
             
             System.out.println("检查文件: " + name + 
+                             " - 日志类型: " + logType +
                              " - 是当天文件: " + isCurrentDayFile + 
-                             " - 是历史文件: " + isHistoryFile);
+                             " - 是历史文件: " + isHistoryFile +
+                             " - 最终匹配: " + matches);
             
-            return isCurrentDayFile || isHistoryFile;
+            return matches;
         });
 
         if (files == null || files.length == 0) {
@@ -242,8 +311,15 @@ public class LogService {
     /**
      * 重载方法，保留向后兼容性
      */
+    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date, String appId) {
+        return getDateLogFilesWithTimeRange(date, appId, null); // 默认不过滤类型
+    }
+    
+    /**
+     * 重载方法，保留向后兼容性
+     */
     public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date) {
-        return getDateLogFilesWithTimeRange(date, null);
+        return getDateLogFilesWithTimeRange(date, null, null);
     }
     
     /**
