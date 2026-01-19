@@ -35,3 +35,6 @@ build/
 src/main/resources/application.properties
 front/node_modules
 src/main/java/log/tsuperman/com/logplatform/data/logs
+python_logplatform/py_logplatform
+python_logplatform/__pycache__
+python_logplatform/data/logs
