@@ -1,6 +1,8 @@
 package log.tsuperman.com.logplatform;
 
 import log.tsuperman.com.logplatform.config.LogPlatformProperties;
+import log.tsuperman.com.logplatform.entity.AppConfig;
+import log.tsuperman.com.logplatform.service.ConfigService;
 import org.apache.logging.log4j.util.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,9 +28,22 @@ public class LogService {
     @Autowired
     private LogPlatformProperties properties;
     
+    @Autowired
+    private ConfigService configService;
+    
     // 定义日志时间戳的正则表达式
     private static final Pattern TIMESTAMP_PATTERN = Pattern.compile("(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})");
 
+    /**
+     * 根据应用ID获取应用配置
+     */
+    private AppConfig getAppConfigById(String appId) {
+        if (Strings.isEmpty(appId)) {
+            return null;
+        }
+        return configService.getAppById(appId);
+    }
+    
     /**
      * 根据日期和关键字检索日志
      * @param date 格式 yyyy-MM-dd
@@ -36,40 +51,68 @@ public class LogService {
      * @param startTime 格式 HH:mm:ss
      * @param endTime 格式 HH:mm:ss
      * @param fileName 要查询的文件名（可选）
+     * @param appId 应用ID（可选，如果不提供则使用默认配置）
      *
      * 日志格式为：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:06:00.714 INFO 6762 [xxl-job, JobThread-11-1767852360014] com.***.***.TroubleSubmitJob 具体日志信息
      */
-    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName) throws IOException {
+    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName, String appId) throws IOException {
         List<String> results = new ArrayList<>();
 
-        if (Strings.isEmpty(fileName)){
-            return results;
+        String logPath;
+        String logPrefix;
+        
+        // 根据应用ID获取相应配置，如果没有提供应用ID则使用默认配置
+        if (!Strings.isEmpty(appId)) {
+            AppConfig appConfig = getAppConfigById(appId);
+            if (appConfig == null) {
+                System.out.println("找不到应用配置: " + appId);
+                return results;
+            }
+            logPath = appConfig.getLogPath();
+            logPrefix = appConfig.getLogPrefix();
+        } else {
+            logPath = properties.getFullLogPath();
+            logPrefix = properties.getLogPrefix();
         }
 
         // 获取当前日期
         String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         
         // 1. 寻找匹配的文件：task-center-info.log (仅当天) 或 task-center-info.2026-01-14.*.log (历史日期)
-        File logDir = new File(properties.getFullLogPath());
+        File logDir = new File(logPath);
+        
+        // 检查日志目录是否存在
+        if (!logDir.exists() || !logDir.isDirectory()) {
+            System.out.println("日志目录不存在或不是一个目录: " + logPath);
+            return results;
+        }
+        
         File[] files = logDir.listFiles((dir, name) -> {
             // 如果指定了文件名，只查找该文件
-            if (fileName != null && !fileName.isEmpty()) {
+            if (!Strings.isEmpty(fileName)) {
                 return name.equals(fileName);
             }
             
-            // 否则按照原有逻辑查找
-            return (date.equals(currentDate) && name.equals(properties.getLogPrefix() + ".log")) || 
-                   (name.contains(date) && name.startsWith(properties.getLogPrefix()) && name.endsWith(".log"));
+            // 否则按照原有逻辑查找所有匹配日期的文件
+            return (date.equals(currentDate) && name.equals(logPrefix + ".log")) || 
+                   (name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log"));
         });
 
         if (files == null || files.length == 0) {
-            System.out.println("未找到匹配的日志文件，路径：" + properties.getFullLogPath() + "，日期：" + date + 
-                              (fileName != null ? "，文件名：" + fileName : ""));
+            System.out.println("未找到匹配的日志文件，路径：" + logPath + "，日期：" + date + 
+                              (!Strings.isEmpty(fileName) ? "，文件名：" + fileName : "") + 
+                              (!Strings.isEmpty(appId) ? "，应用ID：" + appId : ""));
+            // 尝试列出目录中的所有文件以帮助调试
+            File[] allFiles = logDir.listFiles();
+            if (allFiles != null) {
+                System.out.println("目录中所有文件：" + Arrays.toString(allFiles) + 
+                                  "，期望前缀：" + logPrefix);
+            }
             return results;
         }
 
         // 2. 按文件名排序，确保日志顺序连贯
-        Arrays.sort(files, this::compareLogFileNames);
+        Arrays.sort(files, (f1, f2) -> compareLogFileNames(f1, f2, logPrefix));
 
         // 3. 逐个文件读取（使用 Files.lines 延迟读取，不占内存）
         for (File file : files) {
@@ -85,7 +128,7 @@ public class LogService {
                             
                             return timeMatch && kwMatch;
                         })
-                        .limit(100) // 单个文件最多返回 2000 行，防止前端卡死
+                        .limit(5000) // 单个文件最多返回 5000 行，防止前端卡死
                         .collect(Collectors.toList());
 
                 results.addAll(matched);
@@ -103,41 +146,104 @@ public class LogService {
      * 重载方法，保留向后兼容性
      */
     public List<String> queryLogs(String date, String keyword, String startTime, String endTime) throws IOException {
-        return queryLogs(date, keyword, startTime, endTime, null);
+        return queryLogs(date, keyword, startTime, endTime, null, null);
+    }
+    
+    /**
+     * 重载方法，兼容文件名参数
+     */
+    public List<String> queryLogs(String date, String keyword, String startTime, String endTime, String fileName) throws IOException {
+        return queryLogs(date, keyword, startTime, endTime, fileName, null);
     }
     
     /**
      * 获取指定日期下的日志文件列表及其时间范围
      * @param date 格式 yyyy-MM-dd
+     * @param appId 应用ID（可选，如果不提供则使用默认配置）
      * @return 包含文件信息和时间范围的列表
      */
-    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date) {
+    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date, String appId) {
         List<LogFileWithTimeRange> result = new ArrayList<>();
         String currentDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
 
-        File logDir = new File(properties.getFullLogPath());
-        File[] files = logDir.listFiles((dir, name) ->
-                // 如果查询的是当天，则包含当前活动日志文件；否则只查找历史日志文件
-                (date.equals(currentDate) && name.equals(properties.getLogPrefix() + ".log")) ||
-                (name.contains(date) && name.startsWith(properties.getLogPrefix()) && name.endsWith(".log"))
-        );
+        String logPath;
+        String logPrefix;
+        
+        // 根据应用ID获取相应配置，如果没有提供应用ID则使用默认配置
+        if (!Strings.isEmpty(appId)) {
+            AppConfig appConfig = getAppConfigById(appId);
+            if (appConfig == null) {
+                System.out.println("找不到应用配置: " + appId);
+                return result;
+            }
+            logPath = appConfig.getLogPath();
+            logPrefix = appConfig.getLogPrefix();
+            System.out.println("使用应用配置 - 应用ID: " + appId + ", 日志路径: " + logPath + ", 日志前缀: " + logPrefix);
+        } else {
+            logPath = properties.getFullLogPath();
+            logPrefix = properties.getLogPrefix();
+            System.out.println("使用默认配置 - 日志路径: " + logPath + ", 日志前缀: " + logPrefix);
+        }
 
-        if (files == null || files.length == 0) {
-            System.out.println("未找到匹配的日志文件，路径：" + properties.getFullLogPath() + "，日期：" + date);
+        File logDir = new File(logPath);
+        
+        // 检查日志目录是否存在
+        if (!logDir.exists() || !logDir.isDirectory()) {
+            System.out.println("日志目录不存在或不是一个目录: " + logPath);
             return result;
         }
 
+        System.out.println("查找日期 " + date + " 的日志文件，当前日期: " + currentDate);
+
+        File[] files = logDir.listFiles((dir, name) -> {
+            boolean isCurrentDayFile = date.equals(currentDate) && name.equals(logPrefix + ".log");
+            boolean isHistoryFile = name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log");
+            
+            System.out.println("检查文件: " + name + 
+                             " - 是当天文件: " + isCurrentDayFile + 
+                             " - 是历史文件: " + isHistoryFile);
+            
+            return isCurrentDayFile || isHistoryFile;
+        });
+
+        if (files == null || files.length == 0) {
+            System.out.println("未找到匹配的日志文件，路径：" + logPath + "，日期：" + date);
+            // 列出目录中的所有文件以帮助调试
+            File[] allFiles = logDir.listFiles();
+            if (allFiles != null) {
+                System.out.println("目录中所有文件：");
+                for (File f : allFiles) {
+                    System.out.println("  - " + f.getName());
+                }
+                System.out.println("期望前缀：" + logPrefix);
+            }
+            return result;
+        }
+
+        System.out.println("找到 " + files.length + " 个匹配的文件");
+
         // 按文件名排序
-        Arrays.sort(files, this::compareLogFileNames);
+        Arrays.sort(files, (f1, f2) -> compareLogFileNames(f1, f2, logPrefix));
 
         for (File file : files) {
+            System.out.println("分析文件: " + file.getName());
             LogFileWithTimeRange fileInfo = analyzeFileTimeRange(file);
             if (fileInfo != null) {
                 result.add(fileInfo);
+                System.out.println("  - 添加文件信息: " + fileInfo.getFileName());
+            } else {
+                System.out.println("  - 文件分析失败");
             }
         }
 
         return result;
+    }
+    
+    /**
+     * 重载方法，保留向后兼容性
+     */
+    public List<LogFileWithTimeRange> getDateLogFilesWithTimeRange(String date) {
+        return getDateLogFilesWithTimeRange(date, null);
     }
     
     /**
@@ -213,17 +319,17 @@ public class LogService {
     /**
      * 比较日志文件名称，按数字序号排序
      */
-    private int compareLogFileNames(File f1, File f2) {
+    private int compareLogFileNames(File f1, File f2, String logPrefix) {
         String name1 = f1.getName();
         String name2 = f2.getName();
         
         // 如果是当前活跃日志文件，排在最后
-        if (name1.equals(properties.getLogPrefix() + ".log")) return 1;
-        if (name2.equals(properties.getLogPrefix() + ".log")) return -1;
+        if (name1.equals(logPrefix + ".log")) return 1;
+        if (name2.equals(logPrefix + ".log")) return -1;
         
         // 提取日期和序号进行比较
-        String[] parts1 = extractDateAndNumber(name1);
-        String[] parts2 = extractDateAndNumber(name2);
+        String[] parts1 = extractDateAndNumber(name1, logPrefix);
+        String[] parts2 = extractDateAndNumber(name2, logPrefix);
         
         // 先比较日期
         int dateCompare = parts1[0].compareTo(parts2[0]);
@@ -240,11 +346,18 @@ public class LogService {
     }
     
     /**
+     * 重载方法，保留向后兼容性
+     */
+    private int compareLogFileNames(File f1, File f2) {
+        return compareLogFileNames(f1, f2, properties.getLogPrefix());
+    }
+    
+    /**
      * 从日志文件名中提取日期和序号
      */
-    private String[] extractDateAndNumber(String fileName) {
+    private String[] extractDateAndNumber(String fileName, String logPrefix) {
         // 匹配 task-center-info.2026-01-08.1.log 这种格式
-        String regex = properties.getLogPrefix() + "\\.([0-9]{4}-[0-9]{2}-[0-9]{2})\\.(\\d+)\\.log";
+        String regex = logPrefix + "\\.([0-9]{4}-[0-9]{2}-[0-9]{2})\\.(\\d+)\\.log";
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);
         java.util.regex.Matcher matcher = pattern.matcher(fileName);
         
@@ -253,6 +366,13 @@ public class LogService {
         }
         
         return new String[]{"", "0"};
+    }
+    
+    /**
+     * 重载方法，保留向后兼容性
+     */
+    private String[] extractDateAndNumber(String fileName) {
+        return extractDateAndNumber(fileName, properties.getLogPrefix());
     }
     
     /**
@@ -274,33 +394,62 @@ public class LogService {
     
     /**
      * 获取可用的日期列表
+     * @param appId 应用ID（可选，如果不提供则使用默认配置）
      */
-    public Set<String> getAvailableDates() {
+    public Set<String> getAvailableDates(String appId) {
         Set<String> dates = new TreeSet<>();
-        File logDir = new File(properties.getFullLogPath());
         
-        if (!logDir.exists()) {
-            System.out.println("日志目录不存在: " + properties.getFullLogPath());
+        String logPath;
+        String logPrefix;
+        
+        // 根据应用ID获取相应配置，如果没有提供应用ID则使用默认配置
+        if (!Strings.isEmpty(appId)) {
+            AppConfig appConfig = getAppConfigById(appId);
+            if (appConfig == null) {
+                System.out.println("找不到应用配置: " + appId);
+                return dates;
+            }
+            logPath = appConfig.getLogPath();
+            logPrefix = appConfig.getLogPrefix();
+        } else {
+            logPath = properties.getFullLogPath();
+            logPrefix = properties.getLogPrefix();
+        }
+        
+        File logDir = new File(logPath);
+        
+        if (!logDir.exists() || !logDir.isDirectory()) {
+            System.out.println("日志目录不存在: " + logPath);
             return dates;
         }
         
         File[] files = logDir.listFiles((dir, name) -> 
-            name.startsWith(properties.getLogPrefix()) && name.endsWith(".log")
+            name.startsWith(logPrefix) && name.endsWith(".log")
         );
         
         if (files == null) return dates;
         
+        Pattern datePattern = Pattern.compile(logPrefix + "\\.(\\d{4}-\\d{2}-\\d{2})(\\.\\d+)?\\.log");
+        
         for (File file : files) {
             String fileName = file.getName();
-            String[] parts = extractDateAndNumber(fileName);
-            if (!parts[0].isEmpty()) {
-                dates.add(parts[0]);
-            } else if (fileName.equals(properties.getLogPrefix() + ".log")) {
+            java.util.regex.Matcher matcher = datePattern.matcher(fileName);
+            
+            if (matcher.matches()) {
+                dates.add(matcher.group(1)); // 提取日期部分
+            } else if (fileName.equals(logPrefix + ".log")) {
                 // 当前日志文件，添加今天日期
                 dates.add(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
             }
         }
         
         return dates;
+    }
+    
+    /**
+     * 重载方法，保留向后兼容性
+     */
+    public Set<String> getAvailableDates() {
+        return getAvailableDates(null);
     }
 }

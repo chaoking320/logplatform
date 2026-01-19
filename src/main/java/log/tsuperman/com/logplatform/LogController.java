@@ -32,6 +32,7 @@ public class LogController {
      * @param startTime 开始时间，格式：HH:mm
      * @param endTime 结束时间，格式：HH:mm
      * @param file 要查询的文件名（可选）
+     * @param appId 应用ID（可选）
      * @return 日志列表
      */
     @GetMapping("/query")
@@ -40,17 +41,26 @@ public class LogController {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "00:00") String startTime,
             @RequestParam(defaultValue = "23:59") String endTime,
-            @RequestParam(required = false) String file) {
+            @RequestParam(required = false) String file,
+            @RequestParam(required = false) String appId) {
         
         try {
+            System.out.println("收到日志查询请求 - 日期: " + date + ", 关键词: " + keyword + 
+                             ", 开始时间: " + startTime + ", 结束时间: " + endTime + 
+                             ", 文件: " + file + ", 应用ID: " + appId);
+            
             // 将时间格式从 HH:mm 转换为 HH:mm:ss
             String startTimeSec = startTime + ":00";
             String endTimeSec = endTime + ":59";
             
-            List<String> logs = logService.queryLogs(date, keyword, startTimeSec, endTimeSec, file); // 传递file参数
+            List<String> logs = logService.queryLogs(date, keyword, startTimeSec, endTimeSec, file, appId);
+            
+            System.out.println("查询结果: 找到 " + logs.size() + " 条日志");
+            
             return ApiResponse.success(logs);
         } catch (Exception e) {
             e.printStackTrace();
+            System.err.println("查询日志失败: " + e.getMessage());
             return ApiResponse.error("查询日志失败: " + e.getMessage());
         }
     }
@@ -63,6 +73,7 @@ public class LogController {
      * @param startTime 开始时间，格式：HH:mm
      * @param endTime 结束时间，格式：HH:mm
      * @param file 要查询的文件名（可选）
+     * @param appId 应用ID（可选）
      * @return 日志列表
      */
     @GetMapping("/remote/query")
@@ -72,7 +83,8 @@ public class LogController {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "00:00") String startTime,
             @RequestParam(defaultValue = "23:59") String endTime,
-            @RequestParam(required = false) String file) {
+            @RequestParam(required = false) String file,
+            @RequestParam(required = false) String appId) {
         
         try {
             ServerConfig server = configService.getServerById(serverId);
@@ -92,9 +104,9 @@ public class LogController {
      * 获取可用的日期列表（本地）
      */
     @GetMapping("/dates")
-    public ApiResponse<Set<String>> getAvailableDates() {
+    public ApiResponse<Set<String>> getAvailableDates(@RequestParam(required = false) String appId) {
         try {
-            Set<String> dates = logService.getAvailableDates();
+            Set<String> dates = logService.getAvailableDates(appId);
             return ApiResponse.success(dates);
         } catch (Exception e) {
             e.printStackTrace();
@@ -125,12 +137,25 @@ public class LogController {
      * 获取指定日期下的日志文件列表及其时间范围（本地）
      */
     @GetMapping("/files/{date}")
-    public ApiResponse<List<LogService.LogFileWithTimeRange>> getDateLogFiles(@PathVariable String date) {
+    public ApiResponse<List<LogService.LogFileWithTimeRange>> getDateLogFiles(
+            @PathVariable String date,
+            @RequestParam(required = false) String appId) {
         try {
-            List<LogService.LogFileWithTimeRange> files = logService.getDateLogFilesWithTimeRange(date);
+            System.out.println("收到文件列表查询请求 - 日期: " + date + ", 应用ID: " + appId);
+            
+            List<LogService.LogFileWithTimeRange> files = logService.getDateLogFilesWithTimeRange(date, appId);
+            
+            System.out.println("文件列表查询结果: 找到 " + files.size() + " 个文件");
+            for (LogService.LogFileWithTimeRange file : files) {
+                System.out.println("  - 文件: " + file.getFileName() + 
+                                 ", 最早时间: " + file.getEarliestTime() + 
+                                 ", 最晚时间: " + file.getLatestTime());
+            }
+            
             return ApiResponse.success(files);
         } catch (Exception e) {
             e.printStackTrace();
+            System.err.println("获取文件列表失败: " + e.getMessage());
             return ApiResponse.error("获取日期下的文件列表失败: " + e.getMessage());
         }
     }

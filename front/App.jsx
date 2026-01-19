@@ -2,6 +2,35 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Calendar, Clock, FileText, ChevronDown, Download, RefreshCw, Terminal, CheckCircle2, Server, Database } from 'lucide-react';
 
 // --- API 请求封装 ---
+const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) => {
+  // 如果选择了远程服务器，直接使用远程服务器的API地址
+  if (selectedServer) {
+    try {
+      const serverResponse = await fetch('/api/config/servers');
+      const serverResult = await serverResponse.json();
+      
+      if (serverResult.success) {
+        const server = serverResult.data.find(s => s.id === selectedServer);
+        if (server) {
+          // 直接访问远程服务器，绕过本地代理
+          return `http://${server.host}/logapi${endpoint}`;
+        } else {
+          throw new Error(`找不到服务器配置: ${selectedServer}`);
+        }
+      } else {
+        throw new Error('获取服务器配置失败');
+      }
+    } catch (error) {
+      console.error('Error fetching server config:', error);
+      throw error;
+    }
+  }
+
+  // 对于本地服务器，使用代理路径
+  // Vite 会将 /api 代理到 http://172.28.242.22/logapi/api
+  return endpoint;
+};
+
 const fetchLogs = async (
     date,
     keyword,
@@ -11,30 +40,11 @@ const fetchLogs = async (
     selectedApp = null
 ) => {
     try {
-        let url;
-        if (selectedServer && selectedApp) {
-            // 使用远程API，格式为 http://[server-host]:[server-port]/api/logs/query
-            // 我们需要获取服务器配置信息来构造正确的URL
-            const serverResponse = await fetch('/api/config/servers');
-            const serverResult = await serverResponse.json();
-            
-            if (serverResult.success) {
-                const server = serverResult.data.find(s => s.id === selectedServer);
-                if (server) {
-                    const remoteBaseUrl = `http://${server.host}/logapi/api/logs/query`;
-                    url = `${remoteBaseUrl}?date=${date}&startTime=${startTime}&endTime=${endTime}`;
-                    if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
-                } else {
-                    throw new Error(`找不到服务器配置: ${selectedServer}`);
-                }
-            } else {
-                throw new Error('获取服务器配置失败');
-            }
-        } else {
-            // 使用本地API
-            url = `/api/logs/query?date=${date}&startTime=${startTime}&endTime=${endTime}`;
-            if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
-        }
+        const baseUrl = await getApiUrl('/api/logs/query', selectedServer, selectedApp);
+        let url = `${baseUrl}?date=${date}&startTime=${startTime}&endTime=${endTime}`;
+        
+        if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+        if (selectedApp) url += `&appId=${selectedApp}`;
 
         const response = await fetch(url, {
             method: 'GET',
@@ -60,27 +70,11 @@ const fetchLogs = async (
 };
 
 // --- 获取可用日期列表 ---
-const fetchAvailableDates = async (selectedServer = null) => {
+const fetchAvailableDates = async (selectedServer = null, selectedApp = null) => {
     try {
-        let url;
-        if (selectedServer) {
-            // 获取远程服务器的日期列表
-            const serverResponse = await fetch('/api/config/servers');
-            const serverResult = await serverResponse.json();
-            
-            if (serverResult.success) {
-                const server = serverResult.data.find(s => s.id === selectedServer);
-                if (server) {
-                    url = `http://${server.host}/logapi/api/logs/dates`;
-                } else {
-                    throw new Error(`找不到服务器配置: ${selectedServer}`);
-                }
-            } else {
-                throw new Error('获取服务器配置失败');
-            }
-        } else {
-            url = '/api/logs/dates';
-        }
+        const baseUrl = await getApiUrl('/api/logs/dates', selectedServer, selectedApp);
+        let url = baseUrl;
+        if (selectedApp) url += `?appId=${selectedApp}`;
         
         const response = await fetch(url);
         const data = await response.json();
@@ -96,27 +90,11 @@ const fetchAvailableDates = async (selectedServer = null) => {
 };
 
 // --- 获取指定日期下的日志文件列表 ---
-const fetchDateLogFiles = async (date, selectedServer = null) => {
+const fetchDateLogFiles = async (date, selectedServer = null, selectedApp = null) => {
     try {
-        let url;
-        if (selectedServer) {
-            // 获取远程服务器的文件列表
-            const serverResponse = await fetch('/api/config/servers');
-            const serverResult = await serverResponse.json();
-
-            if (serverResult.success) {
-                const server = serverResult.data.find(s => s.id === selectedServer);
-                if (server) {
-                    url = `http://${server.host}/logapi/api/logs/files/${date}`;
-                } else {
-                    throw new Error(`找不到服务器配置: ${selectedServer}`);
-                }
-            } else {
-                throw new Error('获取服务器配置失败');
-            }
-        } else {
-            url = `/api/logs/files/${date}`;
-        }
+        const baseUrl = await getApiUrl(`/api/logs/files/${date}`, selectedServer, selectedApp);
+        let url = baseUrl;
+        if (selectedApp) url += `?appId=${selectedApp}`;
         
         const response = await fetch(url);
         console.log('response', response)
@@ -135,7 +113,8 @@ const fetchDateLogFiles = async (date, selectedServer = null) => {
 // --- 获取服务器列表 ---
 const fetchServers = async () => {
     try {
-        const response = await fetch('/api/config/servers');
+        const baseUrl = await getApiUrl('/api/config/servers');
+        const response = await fetch(baseUrl);
         const data = await response.json();
         if (data.success) {
             return data.data || [];
@@ -151,7 +130,8 @@ const fetchServers = async () => {
 // --- 获取服务器下的应用列表 ---
 const fetchAppsByServer = async (serverId) => {
     try {
-        const response = await fetch(`/api/config/apps/server/${serverId}`);
+        const baseUrl = await getApiUrl(`/api/config/apps/server/${serverId}`);
+        const response = await fetch(baseUrl);
         const data = await response.json();
         if (data.success) {
             return data.data || [];
@@ -272,7 +252,7 @@ const App = () => {
     useEffect(() => {
         const loadAvailableDates = async () => {
             try {
-                const dates = await fetchAvailableDates(selectedServer);
+                const dates = await fetchAvailableDates(selectedServer, selectedApp);
                 setAvailableDates(dates);
                 // 如果有日期，设置最新的日期为默认值
                 if (dates.length > 0) {
@@ -285,14 +265,14 @@ const App = () => {
         };
 
         loadAvailableDates();
-    }, [selectedServer]); // 当服务器改变时重新获取日期
+    }, [selectedServer, selectedApp]); // 当服务器或应用改变时重新获取日期
 
     // 获取选定日期下的日志文件列表
     useEffect(() => {
         const loadDateLogFiles = async () => {
             if (selectedDate) {
                 try {
-                    const files = await fetchDateLogFiles(selectedDate, selectedServer);
+                    const files = await fetchDateLogFiles(selectedDate, selectedServer, selectedApp);
                     setDateLogFiles(files);
                 } catch (error) {
                     console.error('Error fetching date log files:', error);
@@ -302,38 +282,19 @@ const App = () => {
         };
 
         loadDateLogFiles();
-    }, [selectedDate, selectedServer]); // 当服务器或日期改变时重新获取文件列表
+    }, [selectedDate, selectedServer, selectedApp]); // 当服务器、应用或日期改变时重新获取文件列表
 
     // 加载日志数据
     const loadLogs = async () => {
         setIsLoading(true);
         setError(null);
         try {
-            // 如果有选择特定文件，则传递文件参数
-            let url;
-            if (selectedServer && selectedApp) {
-                // 获取服务器配置来构建远程URL
-                const serverResponse = await fetch('/api/config/servers');
-                const serverResult = await serverResponse.json();
-                
-                if (serverResult.success) {
-                    const server = serverResult.data.find(s => s.id === selectedServer);
-                    if (server) {
-                        const remoteBaseUrl = `http://${server.host}/logapi/api/logs/query`;
-                        url = `${remoteBaseUrl}?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
-                        if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
-                        if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;
-                    } else {
-                        throw new Error(`找不到服务器配置: ${selectedServer}`);
-                    }
-                } else {
-                    throw new Error('获取服务器配置失败');
-                }
-            } else {
-                url = `/api/logs/query?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
-                if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
-                if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;
-            }
+            const baseUrl = await getApiUrl('/api/logs/query', selectedServer, selectedApp);
+            let url = `${baseUrl}?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
+            
+            if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
+            if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;
+            if (selectedApp) url += `&appId=${selectedApp}`;
 
             const response = await fetch(url, {
                 method: 'GET',
@@ -390,6 +351,7 @@ const App = () => {
 
     // 处理服务器选择
     const handleServerChange = (serverId) => {
+        console.log('Selected server:', serverId)
         setSelectedServer(serverId);
         setSelectedApp(null); // 重置应用选择
         setSelectedFile(null); // 清空之前选择的文件
