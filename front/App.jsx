@@ -1,41 +1,168 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Calendar, Clock, FileText, ChevronDown, Download, RefreshCw, Terminal, CheckCircle2 } from 'lucide-react';
+import { Search, Calendar, Clock, FileText, ChevronDown, Download, RefreshCw, Terminal, CheckCircle2, Server, Database } from 'lucide-react';
 
-// --- 日志行解析器 ---
-// 针对：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job...]
-// const parseLogLine = (raw, id) => {
-//     const regex = /^\[(.*?)] \[(.*?)] (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (\w+) (\d+) \[(.*?)] (.*?) (.*)$/;
-//     const match = raw.match(regex);
-//     if (match) {
-//         return {
-//             id,
-//             node: match[1],
-//             traceId: match[2],
-//             time: match[3],
-//             level: match[4],
-//             pid: match[5],
-//             thread: match[6],
-//             className: match[7],
-//             msg: match[8],
-//             raw
-//         };
-//     }
-//     return { id, raw, time: "Unknown", level: "OTHER", msg: raw };
-// };
+// --- API 请求封装 ---
+const fetchLogs = async (
+    date,
+    keyword,
+    startTime,
+    endTime,
+    selectedServer = null,
+    selectedApp = null
+) => {
+    try {
+        let url;
+        if (selectedServer && selectedApp) {
+            // 使用远程API，格式为 http://[server-host]:[server-port]/api/logs/query
+            // 我们需要获取服务器配置信息来构造正确的URL
+            const serverResponse = await fetch('/api/config/servers');
+            const serverResult = await serverResponse.json();
+            
+            if (serverResult.success) {
+                const server = serverResult.data.find(s => s.id === selectedServer);
+                if (server) {
+                    const remoteBaseUrl = `http://${server.host}:${server.port}/api/logs/query`;
+                    url = `${remoteBaseUrl}?date=${date}&startTime=${startTime}&endTime=${endTime}`;
+                    if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+                } else {
+                    throw new Error(`找不到服务器配置: ${selectedServer}`);
+                }
+            } else {
+                throw new Error('获取服务器配置失败');
+            }
+        } else {
+            // 使用本地API
+            url = `/api/logs/query?date=${date}&startTime=${startTime}&endTime=${endTime}`;
+            if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
+        }
 
-// // --- JSON 格式化工具 ---
-// const tryFormatJson = (text) => {
-//     try {
-//         const jsonMatch = text.match(/\{.*\}|\[.*\]/);
-//         if (jsonMatch) {
-//             const obj = JSON.parse(jsonMatch[0]);
-//             return JSON.stringify(obj, null, 2);
-//         }
-//     } catch (e) {
-//         return null;
-//     }
-//     return null;
-// };
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch logs');
+        }
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+        throw error;
+    }
+};
+
+// --- 获取可用日期列表 ---
+const fetchAvailableDates = async (selectedServer = null) => {
+    try {
+        let url;
+        if (selectedServer) {
+            // 获取远程服务器的日期列表
+            const serverResponse = await fetch('/api/config/servers');
+            const serverResult = await serverResponse.json();
+            
+            if (serverResult.success) {
+                const server = serverResult.data.find(s => s.id === selectedServer);
+                if (server) {
+                    url = `http://${server.host}:${server.port}/api/logs/dates`;
+                } else {
+                    throw new Error(`找不到服务器配置: ${selectedServer}`);
+                }
+            } else {
+                throw new Error('获取服务器配置失败');
+            }
+        } else {
+            url = '/api/logs/dates';
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch available dates');
+        }
+    } catch (error) {
+        console.error('Error fetching available dates:', error);
+        return [];
+    }
+};
+
+// --- 获取指定日期下的日志文件列表 ---
+const fetchDateLogFiles = async (date, selectedServer = null) => {
+    try {
+        let url;
+        if (selectedServer) {
+            // 获取远程服务器的文件列表
+            const serverResponse = await fetch('/api/config/servers');
+            const serverResult = await serverResponse.json();
+            
+            if (serverResult.success) {
+                const server = serverResult.data.find(s => s.id === selectedServer);
+                if (server) {
+                    url = `http://${server.host}:${server.port}/api/logs/files/${date}`;
+                } else {
+                    throw new Error(`找不到服务器配置: ${selectedServer}`);
+                }
+            } else {
+                throw new Error('获取服务器配置失败');
+            }
+        } else {
+            url = `/api/logs/files/${date}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch date log files');
+        }
+    } catch (error) {
+        console.error('Error fetching date log files:', error);
+        return [];
+    }
+};
+
+// --- 获取服务器列表 ---
+const fetchServers = async () => {
+    try {
+        const response = await fetch('/api/config/servers');
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch servers');
+        }
+    } catch (error) {
+        console.error('Error fetching servers:', error);
+        return [];
+    }
+};
+
+// --- 获取服务器下的应用列表 ---
+const fetchAppsByServer = async (serverId) => {
+    try {
+        const response = await fetch(`/api/config/apps/server/${serverId}`);
+        const data = await response.json();
+        if (data.success) {
+            return data.data || [];
+        } else {
+            throw new Error(data.message || 'Failed to fetch apps');
+        }
+    } catch (error) {
+        console.error('Error fetching apps by server:', error);
+        return [];
+    }
+};
+
 
 // --- 日志行解析器 ---
 // 针对：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job...]
@@ -73,68 +200,6 @@ const tryFormatJson = (text) => {
     return null;
 };
 
-// --- API 请求封装 ---
-const fetchLogs = async (
-    date,
-    keyword,
-    startTime,
-    endTime
-) => {
-    try {
-        const response = await fetch(`/api/logs/query?date=${date}&keyword=${encodeURIComponent(keyword)}&startTime=${startTime}&endTime=${endTime}`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        if (data.success) {
-            return data.data || [];
-        } else {
-            throw new Error(data.message || 'Failed to fetch logs');
-        }
-    } catch (error) {
-        console.error('Error fetching logs:', error);
-        throw error;
-    }
-};
-
-// --- 获取可用日期列表 ---
-const fetchAvailableDates = async () => {
-    try {
-        const response = await fetch('/api/logs/dates');
-        const data = await response.json();
-        if (data.success) {
-            return data.data || [];
-        } else {
-            throw new Error(data.message || 'Failed to fetch available dates');
-        }
-    } catch (error) {
-        console.error('Error fetching available dates:', error);
-        return [];
-    }
-};
-
-// --- 获取指定日期下的日志文件列表 ---
-const fetchDateLogFiles = async (date) => {
-    try {
-        const response = await fetch(`/api/logs/files/${date}`);
-        const data = await response.json();
-        if (data.success) {
-            return data.data || [];
-        } else {
-            throw new Error(data.message || 'Failed to fetch date log files');
-        }
-    } catch (error) {
-        console.error('Error fetching date log files:', error);
-        return [];
-    }
-};
 
 // --- 主组件 ---
 const App = () => {
@@ -148,6 +213,10 @@ const App = () => {
     const [expandedLog, setExpandedLog] = React.useState(null);
     const [error, setError] = React.useState(null);
     const [selectedFile, setSelectedFile] = useState(null); // 新增：记录选择的文件
+    const [servers, setServers] = useState([]);
+    const [apps, setApps] = useState([]);
+    const [selectedServer, setSelectedServer] = useState(null);
+    const [selectedApp, setSelectedApp] = useState(null);
     const scrollRef = useRef(null);
 
     // 获取可用日期列表
@@ -155,11 +224,54 @@ const App = () => {
     // 获取指定日期下的日志文件列表
     const [dateLogFiles, setDateLogFiles] = useState([]);
 
+    // 加载服务器列表
     useEffect(() => {
-        // 获取可用日期
+        const loadServers = async () => {
+            try {
+                const serverList = await fetchServers();
+                setServers(serverList);
+                if (serverList.length > 0 && !selectedServer) {
+                    setSelectedServer(serverList[0].id);
+                }
+            } catch (error) {
+                console.error('Error fetching servers:', error);
+            }
+        };
+
+        loadServers();
+    }, []);
+
+    // 当服务器改变时，加载该服务器的应用列表
+    useEffect(() => {
+        const loadApps = async () => {
+            if (selectedServer) {
+                try {
+                    const appList = await fetchAppsByServer(selectedServer);
+                    setApps(appList);
+                    if (appList.length > 0 && !selectedApp) {
+                        setSelectedApp(appList[0].id);
+                    } else if (appList.length === 0) {
+                        setSelectedApp(null);
+                    }
+                } catch (error) {
+                    console.error('Error fetching apps:', error);
+                    setApps([]);
+                    setSelectedApp(null);
+                }
+            } else {
+                setApps([]);
+                setSelectedApp(null);
+            }
+        };
+
+        loadApps();
+    }, [selectedServer]);
+
+    // 获取可用日期列表
+    useEffect(() => {
         const loadAvailableDates = async () => {
             try {
-                const dates = await fetchAvailableDates();
+                const dates = await fetchAvailableDates(selectedServer);
                 setAvailableDates(dates);
                 // 如果有日期，设置最新的日期为默认值
                 if (dates.length > 0) {
@@ -172,14 +284,14 @@ const App = () => {
         };
 
         loadAvailableDates();
-    }, []);
+    }, [selectedServer]); // 当服务器改变时重新获取日期
 
     // 获取选定日期下的日志文件列表
     useEffect(() => {
         const loadDateLogFiles = async () => {
             if (selectedDate) {
                 try {
-                    const files = await fetchDateLogFiles(selectedDate);
+                    const files = await fetchDateLogFiles(selectedDate, selectedServer);
                     setDateLogFiles(files);
                 } catch (error) {
                     console.error('Error fetching date log files:', error);
@@ -189,7 +301,7 @@ const App = () => {
         };
 
         loadDateLogFiles();
-    }, [selectedDate]);
+    }, [selectedDate, selectedServer]); // 当服务器或日期改变时重新获取文件列表
 
     // 加载日志数据
     const loadLogs = async () => {
@@ -197,11 +309,30 @@ const App = () => {
         setError(null);
         try {
             // 如果有选择特定文件，则传递文件参数
-            let url = `/api/logs/query?date=${selectedDate}`;
-            if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
-            if (startTime) url += `&startTime=${startTime}`;
-            if (endTime) url += `&endTime=${endTime}`;
-            if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`; // 添加文件参数
+            let url;
+            if (selectedServer && selectedApp) {
+                // 获取服务器配置来构建远程URL
+                const serverResponse = await fetch('/api/config/servers');
+                const serverResult = await serverResponse.json();
+                
+                if (serverResult.success) {
+                    const server = serverResult.data.find(s => s.id === selectedServer);
+                    if (server) {
+                        const remoteBaseUrl = `http://${server.host}:${server.port}/api/logs/query`;
+                        url = `${remoteBaseUrl}?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
+                        if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
+                        if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;
+                    } else {
+                        throw new Error(`找不到服务器配置: ${selectedServer}`);
+                    }
+                } else {
+                    throw new Error('获取服务器配置失败');
+                }
+            } else {
+                url = `/api/logs/query?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
+                if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
+                if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;
+            }
 
             const response = await fetch(url, {
                 method: 'GET',
@@ -232,7 +363,7 @@ const App = () => {
 
     useEffect(() => {
         loadLogs();
-    }, [selectedDate]);
+    }, [selectedDate, selectedServer, selectedApp]); // 当服务器或应用改变时也重新加载日志
 
     // 过滤日志
     const filteredLogs = useMemo(() => {
@@ -253,6 +384,19 @@ const App = () => {
     // 处理日期选择
     const handleDateChange = (date) => {
         setSelectedDate(date);
+        setSelectedFile(null); // 清空之前选择的文件
+    };
+
+    // 处理服务器选择
+    const handleServerChange = (serverId) => {
+        setSelectedServer(serverId);
+        setSelectedApp(null); // 重置应用选择
+        setSelectedFile(null); // 清空之前选择的文件
+    };
+
+    // 处理应用选择
+    const handleAppChange = (appId) => {
+        setSelectedApp(appId);
         setSelectedFile(null); // 清空之前选择的文件
     };
 
@@ -290,11 +434,53 @@ const App = () => {
                     </div>
                     <div>
                         <h1 className="font-bold text-white tracking-tight">Log Insight</h1>
-                        <p className="text-[10px] text-slate-500 font-mono uppercase">Production v2.4</p>
+                        <p className="text-[10px] text-slate-500 font-mono uppercase">Platform v2.4</p>
                     </div>
                 </div>
 
                 <div className="p-5 space-y-6 flex-1 overflow-y-auto">
+
+                    {/* 服务器选择 */}
+                    <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                            <Server size={14} /> 服务器
+                        </label>
+                        <select
+                            value={selectedServer || ''}
+                            onChange={(e) => handleServerChange(e.target.value)}
+                            className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                        >
+                            <option value="">本地服务器</option>
+                            {servers.map(server => (
+                                <option key={server.id} value={server.id}>
+                                    {server.name} ({server.host}:{server.port})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* 应用选择 */}
+                    {selectedServer && (
+                        <div className="space-y-2">
+                            <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                                <Database size={14} /> 应用
+                            </label>
+                            <select
+                                value={selectedApp || ''}
+                                onChange={(e) => handleAppChange(e.target.value)}
+                                className="w-full bg-[#0d1117] border border-slate-700 rounded-lg py-2.5 px-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                                disabled={!selectedServer}
+                            >
+                                <option value="">请选择应用</option>
+                                {apps.map(app => (
+                                    <option key={app.id} value={app.id}>
+                                        {app.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div className="space-y-2">
                         <label className="text-[11px] font-bold text-slate-500 uppercase flex items-center gap-2">
                             <Calendar size={14} /> 检索日期
@@ -373,8 +559,8 @@ const App = () => {
                             <CheckCircle2 size={16} />
                         </div>
                         <div className="text-[11px]">
-                            <p className="text-slate-300 font-bold">服务状态正常</p>
-                            <p className="text-slate-500">后端服务已连接</p>
+                            <p className="text-slate-300 font-bold">当前服务器: {selectedServer ? servers.find(s => s.id === selectedServer)?.name : '本地'}</p>
+                            <p className="text-slate-500">状态: {selectedServer ? '已连接' : '本地服务'}</p>
                         </div>
                     </div>
                 </div>
@@ -524,11 +710,11 @@ const App = () => {
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="material-symbols-outlined text-xs">storage</span>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase italic">/data/logs/task-center/task-center-info.log</span>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase italic">{selectedServer ? `Server: ${servers.find(s => s.id === selectedServer)?.name}` : 'Local Service'}</span>
                         </div>
                     </div>
                     <div className="text-[10px] font-mono text-slate-600">
-                        {filteredLogs.length} Lines Displayed | 100MB Per File | Real-time Query
+                        {filteredLogs.length} Lines Displayed | Multi-Server Platform | Real-time Query
                     </div>
                 </div>
             </div>

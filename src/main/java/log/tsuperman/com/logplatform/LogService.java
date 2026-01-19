@@ -85,7 +85,7 @@ public class LogService {
                             
                             return timeMatch && kwMatch;
                         })
-                        .limit(2000) // 单个文件最多返回 2000 行，防止前端卡死
+                        .limit(100) // 单个文件最多返回 2000 行，防止前端卡死
                         .collect(Collectors.toList());
 
                 results.addAll(matched);

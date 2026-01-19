@@ -1,0 +1,78 @@
+server:
+  port: 9876
+
+spring:
+  application:
+    name: logplatform
+
+logging:
+  level:
+    log.tsuperman.com.logplatform: DEBUG
+
+log:
+  platform:
+    logPath: D:\Workspace\mine\github\logplatform\src\main\java\log\tsuperman\com\logplatform\data\logs
+    appName: task-center
+    logPrefix: task-center-info
+    servers:
+      - id: server-1
+        name: "Server-21"
+        host: "172.28.242.21"
+        port: 9876
+        description: "Production server 21"
+      - id: server-2
+        name: "Server-22"
+        host: "172.28.242.22"
+        port: 9876
+        description: "Production server 22"
+    apps:
+      - id: app-1
+        name: "apps-center"
+        logPath: "/home/jingke2.0/logs/apps-center"
+        logPrefix: "apps-center-info"
+        serverId: "server-1"
+      - id: app-2
+        name: "auth-server"
+        logPath: "/home/jingke2.0/logs/auth-server"
+        logPrefix: "auth-server-info"
+        serverId: "server-1"
+      - id: app-3
+        name: "task-center"
+        logPath: "/home/jingke2.0/logs/task-center"
+        logPrefix: "task-center-info"
+        serverId: "server-1"
+      - id: app-4
+        name: "file-center"
+        logPath: "/home/jingke2.0/logs/file-center"
+        logPrefix: "file-center-info"
+        serverId: "server-1"
+      - id: app-5
+        name: "flow-center"
+        logPath: "/home/jingke2.0/logs/flow-center"
+        logPrefix: "flow-center-info"
+        serverId: "server-1"
+      - id: app-6
+        name: "apps-center-2"
+        logPath: "/home/jingke2.0/logs/apps-center"
+        logPrefix: "apps-center-info"
+        serverId: "server-2"
+      - id: app-7
+        name: "auth-server-2"
+        logPath: "/home/jingke2.0/logs/auth-server"
+        logPrefix: "auth-server-info"
+        serverId: "server-2"
+      - id: app-8
+        name: "task-center-2"
+        logPath: "/home/jingke2.0/logs/task-center"
+        logPrefix: "task-center-info"
+        serverId: "server-2"
+      - id: app-9
+        name: "file-center-2"
+        logPath: "/home/jingke2.0/logs/file-center"
+        logPrefix: "file-center-info"
+        serverId: "server-2"
+      - id: app-10
+        name: "flow-center-2"
+        logPath: "/home/jingke2.0/logs/flow-center"
+        logPrefix: "flow-center-info"
+        serverId: "server-2"
