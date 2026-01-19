@@ -21,7 +21,7 @@ const fetchLogs = async (
             if (serverResult.success) {
                 const server = serverResult.data.find(s => s.id === selectedServer);
                 if (server) {
-                    const remoteBaseUrl = `http://${server.host}:${server.port}/api/logs/query`;
+                    const remoteBaseUrl = `http://${server.host}/logapi/api/logs/query`;
                     url = `${remoteBaseUrl}?date=${date}&startTime=${startTime}&endTime=${endTime}`;
                     if (keyword) url += `&keyword=${encodeURIComponent(keyword)}`;
                 } else {
@@ -71,7 +71,7 @@ const fetchAvailableDates = async (selectedServer = null) => {
             if (serverResult.success) {
                 const server = serverResult.data.find(s => s.id === selectedServer);
                 if (server) {
-                    url = `http://${server.host}:${server.port}/api/logs/dates`;
+                    url = `http://${server.host}/logapi/api/logs/dates`;
                 } else {
                     throw new Error(`找不到服务器配置: ${selectedServer}`);
                 }
@@ -103,11 +103,11 @@ const fetchDateLogFiles = async (date, selectedServer = null) => {
             // 获取远程服务器的文件列表
             const serverResponse = await fetch('/api/config/servers');
             const serverResult = await serverResponse.json();
-            
+
             if (serverResult.success) {
                 const server = serverResult.data.find(s => s.id === selectedServer);
                 if (server) {
-                    url = `http://${server.host}:${server.port}/api/logs/files/${date}`;
+                    url = `http://${server.host}/logapi/api/logs/files/${date}`;
                 } else {
                     throw new Error(`找不到服务器配置: ${selectedServer}`);
                 }
@@ -119,6 +119,7 @@ const fetchDateLogFiles = async (date, selectedServer = null) => {
         }
         
         const response = await fetch(url);
+        console.log('response', response)
         const data = await response.json();
         if (data.success) {
             return data.data || [];
@@ -318,7 +319,7 @@ const App = () => {
                 if (serverResult.success) {
                     const server = serverResult.data.find(s => s.id === selectedServer);
                     if (server) {
-                        const remoteBaseUrl = `http://${server.host}:${server.port}/api/logs/query`;
+                        const remoteBaseUrl = `http://${server.host}/logapi/api/logs/query`;
                         url = `${remoteBaseUrl}?date=${selectedDate}&startTime=${startTime}&endTime=${endTime}`;
                         if (searchQuery) url += `&keyword=${encodeURIComponent(searchQuery)}`;
                         if (selectedFile) url += `&file=${encodeURIComponent(selectedFile)}`;

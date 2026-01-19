@@ -11,9 +11,9 @@ logging:
 
 log:
   platform:
-    logPath: D:\Workspace\mine\github\logplatform\src\main\java\log\tsuperman\com\logplatform\data\logs
-    appName: task-center
-    logPrefix: task-center-info
+#    logPath: D:\Workspace\mine\github\logplatform\src\main\java\log\tsuperman\com\logplatform\data\logs
+#    appName: task-center
+#    logPrefix: task-center-info
     servers:
       - id: server-1
         name: "Server-21"

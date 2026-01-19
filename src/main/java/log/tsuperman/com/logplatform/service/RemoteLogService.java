@@ -5,9 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @Service
 public class RemoteLogService {
@@ -17,7 +15,9 @@ public class RemoteLogService {
      * 查询远程服务器上的日志
      */
     public List<String> queryRemoteLogs(ServerConfig server, String date, String keyword, String startTime, String endTime, String file) {
-        String baseUrl = String.format("http://%s:%d/api/logs/query", server.getHost(), server.getPort());
+//        String baseUrl = String.format("http://%s:%d/api/logs/query", server.getHost(), server.getPort());
+        String baseUrl = String.format("http://%s/logapi/api/logs/query", server.getHost());
+
         String url = String.format("%s?date=%s&startTime=%s&endTime=%s", baseUrl, date, startTime, endTime);
         
         if (keyword != null && !keyword.isEmpty()) {
@@ -36,11 +36,11 @@ public class RemoteLogService {
                 return (List<String>)responseBody.get("data");
             } else {
                 System.err.println("远程查询失败: " + (responseBody != null ? responseBody.get("message") : "未知错误"));
-                return List.of(); // 返回空列表
+                return new ArrayList<>(); // 返回空列表
             }
         } catch (Exception e) {
             System.err.println("调用远程服务失败: " + e.getMessage());
-            return List.of(); // 返回空列表
+            return new ArrayList<>(); // 返回空列表
         }
     }
 
@@ -48,8 +48,8 @@ public class RemoteLogService {
      * 获取远程服务器上的可用日期列表
      */
     public Set<String> getRemoteAvailableDates(ServerConfig server) {
-        String url = String.format("http://%s:%d/api/logs/dates", server.getHost(), server.getPort());
-
+//        String url = String.format("http://%s:%d/api/logs/dates", server.getHost(), server.getPort());
+        String url = String.format("http://172.28.242.22/logapi/api/logs/dates");
         try {
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
             Map<String, Object> responseBody = response.getBody();
@@ -58,11 +58,11 @@ public class RemoteLogService {
                 return (Set<String>)responseBody.get("data");
             } else {
                 System.err.println("获取远程日期列表失败: " + (responseBody != null ? responseBody.get("message") : "未知错误"));
-                return Set.of(); // 返回空集合
+                return new HashSet<>(); // 返回空集合
             }
         } catch (Exception e) {
             System.err.println("调用远程服务失败: " + e.getMessage());
-            return Set.of(); // 返回空集合
+            return new HashSet<>(); // 返回空集合
         }
     }
 
@@ -70,7 +70,8 @@ public class RemoteLogService {
      * 获取远程服务器上指定日期的日志文件列表
      */
     public List<Map<String, Object>> getRemoteDateLogFiles(ServerConfig server, String date) {
-        String url = String.format("http://%s:%d/api/logs/files/%s", server.getHost(), server.getPort(), date);
+//        String url = String.format("http://%s:%d/api/logs/files/%s", server.getHost(), server.getPort(), date);
+        String url = String.format("http://172.28.242.22/logapi/api/logs/files/%s", date);
 
         try {
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
@@ -80,11 +81,11 @@ public class RemoteLogService {
                 return (List<Map<String, Object>>)responseBody.get("data");
             } else {
                 System.err.println("获取远程日志文件列表失败: " + (responseBody != null ? responseBody.get("message") : "未知错误"));
-                return List.of(); // 返回空列表
+                return new ArrayList<>(); // 返回空列表
             }
         } catch (Exception e) {
             System.err.println("调用远程服务失败: " + e.getMessage());
-            return List.of(); // 返回空列表
+            return new ArrayList<>(); // 返回空列表
         }
     }
 }

@@ -1,10 +1,12 @@
 package log.tsuperman.com.logplatform.service;
 
-import jakarta.annotation.PostConstruct;
 import log.tsuperman.com.logplatform.entity.AppConfig;
 import log.tsuperman.com.logplatform.entity.ServerConfig;
+import log.tsuperman.com.logplatform.config.LogPlatformProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,7 +14,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class ConfigService {
-    // 模拟数据库存储，实际应用中应使用数据库
+    @Autowired
+    private LogPlatformProperties logPlatformProperties;
+    
     private ConcurrentHashMap<String, ServerConfig> serverConfigs = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, AppConfig> appConfigs = new ConcurrentHashMap<>();
     private int serverCounter = 1;
@@ -20,24 +24,32 @@ public class ConfigService {
 
     @PostConstruct
     public void initDefaultConfig() {
-        // 初始化一些默认配置作为示例
-        ServerConfig defaultServer = new ServerConfig(
-            "server-" + serverCounter++,
-            "Localhost",
-            "localhost",
-            8080,
-            "本地开发服务器"
-        );
-        serverConfigs.put(defaultServer.getId(), defaultServer);
-
-        AppConfig defaultApp = new AppConfig(
-            "app-" + appCounter++,
-            "Task Center",
-            "/data/logs/task-center",
-            "task-center-info",
-            defaultServer.getId()
-        );
-        appConfigs.put(defaultApp.getId(), defaultApp);
+        // 从配置文件加载服务器和应用配置
+        if (logPlatformProperties.getServers() != null) {
+            for (ServerConfig server : logPlatformProperties.getServers()) {
+                serverConfigs.put(server.getId(), server);
+                // 更新计数器以确保ID唯一性
+                if (server.getId().contains("server-")) {
+                    int idNum = Integer.parseInt(server.getId().replace("server-", ""));
+                    if (idNum >= serverCounter) {
+                        serverCounter = idNum + 1;
+                    }
+                }
+            }
+        }
+        
+        if (logPlatformProperties.getApps() != null) {
+            for (AppConfig app : logPlatformProperties.getApps()) {
+                appConfigs.put(app.getId(), app);
+                // 更新计数器以确保ID唯一性
+                if (app.getId().contains("app-")) {
+                    int idNum = Integer.parseInt(app.getId().replace("app-", ""));
+                    if (idNum >= appCounter) {
+                        appCounter = idNum + 1;
+                    }
+                }
+            }
+        }
     }
 
     // 服务器配置相关方法
