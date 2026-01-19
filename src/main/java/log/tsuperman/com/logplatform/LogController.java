@@ -65,40 +65,40 @@ public class LogController {
         }
     }
 
-    /**
-     * 查询远程服务器日志
-     * @param serverId 服务器ID
-     * @param date 日期，格式：yyyy-MM-dd
-     * @param keyword 搜索关键词
-     * @param startTime 开始时间，格式：HH:mm
-     * @param endTime 结束时间，格式：HH:mm
-     * @param file 要查询的文件名（可选）
-     * @param appId 应用ID（可选）
-     * @return 日志列表
-     */
-    @GetMapping("/remote/query")
-    public ApiResponse<List<String>> queryRemoteLogs(
-            @RequestParam String serverId,
-            @RequestParam String date,
-            @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "00:00") String startTime,
-            @RequestParam(defaultValue = "23:59") String endTime,
-            @RequestParam(required = false) String file,
-            @RequestParam(required = false) String appId) {
-        
-        try {
-            ServerConfig server = configService.getServerById(serverId);
-            if (server == null) {
-                return ApiResponse.error("服务器不存在: " + serverId);
-            }
-            
-            List<String> logs = remoteLogService.queryRemoteLogs(server, date, keyword, startTime, endTime, file);
-            return ApiResponse.success(logs);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ApiResponse.error("查询远程日志失败: " + e.getMessage());
-        }
-    }
+    //    /**
+//     * 查询远程服务器日志
+//     * @param serverId 服务器ID
+//     * @param date 日期，格式：yyyy-MM-dd
+//     * @param keyword 搜索关键词
+//     * @param startTime 开始时间，格式：HH:mm
+//     * @param endTime 结束时间，格式：HH:mm
+//     * @param file 要查询的文件名（可选）
+//     * @param appId 应用ID（可选）
+//     * @return 日志列表
+//     */
+//    @GetMapping("/remote/query")
+//    public ApiResponse<List<String>> queryRemoteLogs(
+//            @RequestParam String serverId,
+//            @RequestParam String date,
+//            @RequestParam(required = false) String keyword,
+//            @RequestParam(defaultValue = "00:00") String startTime,
+//            @RequestParam(defaultValue = "23:59") String endTime,
+//            @RequestParam(required = false) String file,
+//            @RequestParam(required = false) String appId) {
+//
+//        try {
+//            ServerConfig server = configService.getServerById(serverId);
+//            if (server == null) {
+//                return ApiResponse.error("服务器不存在: " + serverId);
+//            }
+//
+//            List<String> logs = remoteLogService.queryRemoteLogs(server, date, keyword, startTime, endTime, file);
+//            return ApiResponse.success(logs);
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ApiResponse.error("查询远程日志失败: " + e.getMessage());
+//        }
+//    }
 
     /**
      * 获取可用的日期列表（本地）
@@ -114,24 +114,24 @@ public class LogController {
         }
     }
 
-    /**
-     * 获取远程服务器可用的日期列表
-     */
-    @GetMapping("/remote/dates")
-    public ApiResponse<Set<String>> getRemoteAvailableDates(@RequestParam String serverId) {
-        try {
-            ServerConfig server = configService.getServerById(serverId);
-            if (server == null) {
-                return ApiResponse.error("服务器不存在: " + serverId);
-            }
-            
-            Set<String> dates = remoteLogService.getRemoteAvailableDates(server);
-            return ApiResponse.success(dates);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ApiResponse.error("获取远程日期列表失败: " + e.getMessage());
-        }
-    }
+//    /**
+//     * 获取远程服务器可用的日期列表
+//     */
+//    @GetMapping("/remote/dates")
+//    public ApiResponse<Set<String>> getRemoteAvailableDates(@RequestParam String serverId) {
+//        try {
+//            ServerConfig server = configService.getServerById(serverId);
+//            if (server == null) {
+//                return ApiResponse.error("服务器不存在: " + serverId);
+//            }
+//
+//            Set<String> dates = remoteLogService.getRemoteAvailableDates(server);
+//            return ApiResponse.success(dates);
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ApiResponse.error("获取远程日期列表失败: " + e.getMessage());
+//        }
+//    }
     
     /**
      * 获取指定日期下的日志文件列表及其时间范围（本地）
@@ -160,27 +160,27 @@ public class LogController {
         }
     }
     
-    /**
-     * 获取远程服务器指定日期下的日志文件列表及其时间范围
-     */
-    @GetMapping("/remote/files/{date}")
-    public ApiResponse<List<Object>> getRemoteDateLogFiles(
-            @RequestParam String serverId,
-            @PathVariable String date) {
-        try {
-            ServerConfig server = configService.getServerById(serverId);
-            if (server == null) {
-                return ApiResponse.error("服务器不存在: " + serverId);
-            }
-
-            List<Map<String, Object>> files = remoteLogService.getRemoteDateLogFiles(server, date);
-
-            return ApiResponse.success((List<Object>) (List<?>) files);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ApiResponse.error("获取远程文件列表失败: " + e.getMessage());
-        }
-    }
+//    /**
+//     * 获取远程服务器指定日期下的日志文件列表及其时间范围
+//     */
+//    @GetMapping("/remote/files/{date}")
+//    public ApiResponse<List<Object>> getRemoteDateLogFiles(
+//            @RequestParam String serverId,
+//            @PathVariable String date) {
+//        try {
+//            ServerConfig server = configService.getServerById(serverId);
+//            if (server == null) {
+//                return ApiResponse.error("服务器不存在: " + serverId);
+//            }
+//
+//            List<Map<String, Object>> files = remoteLogService.getRemoteDateLogFiles(server, date);
+//
+//            return ApiResponse.success((List<Object>) (List<?>) files);
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ApiResponse.error("获取远程文件列表失败: " + e.getMessage());
+//        }
+//    }
     
     /**
      * 统一响应格式
