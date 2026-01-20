@@ -143,25 +143,47 @@ public class LogService {
         // 2. 按文件名排序，确保日志顺序连贯
         Arrays.sort(files, (f1, f2) -> compareLogFileNames(f1, f2, logPrefix));
 
-        // 3. 逐个文件读取（使用 Files.lines 延迟读取，不占内存）
+        // 3. 逐个文件读取（使用增强的日志处理逻辑，保留堆栈跟踪等信息）
         for (File file : files) {
             System.out.println("正在处理日志文件: " + file.getName());
             try (Stream<String> lines = Files.lines(file.toPath())) {
-                List<String> matched = lines
-                        .filter(line -> {
-                            // 时间段过滤
-                            boolean timeMatch = isWithinTimeRange(line, startTime, endTime);
-                            
-                            // 关键字过滤
-                            boolean kwMatch = keyword == null || keyword.isEmpty() || line.toLowerCase().contains(keyword.toLowerCase());
-                            
-                            return timeMatch && kwMatch;
-                        })
-                        .limit(500) // 单个文件最多返回 5000 行，防止前端卡死
-                        .collect(Collectors.toList());
+                List<String> allLines = lines.collect(Collectors.toList());
+                List<String> matched = new ArrayList<>();
+                
+                for (int i = 0; i < allLines.size(); i++) {
+                    String line = allLines.get(i);
+                    
+                    // 时间段过滤
+                    boolean timeMatch = isWithinTimeRange(line, startTime, endTime);
+                    
+                    // 关键字过滤
+                    boolean kwMatch = keyword == null || keyword.isEmpty() || line.toLowerCase().contains(keyword.toLowerCase());
+                    
+                    if (timeMatch && kwMatch) {
+                        matched.add(line);
+                        
+                        // 如果这是一个有时间戳的日志行，检查后续的非时间戳行
+                        if (hasTimestamp(line)) {
+                            // 收集后续的非时间戳行（堆栈跟踪、详细信息等）
+                            int j = i + 1;
+                            while (j < allLines.size() && !hasTimestamp(allLines.get(j))) {
+                                String additionalLine = allLines.get(j);
+                                // 对于非时间戳行，只进行关键字过滤
+                                if (keyword == null || keyword.isEmpty() || additionalLine.toLowerCase().contains(keyword.toLowerCase())) {
+                                    matched.add(additionalLine);
+                                }
+                                j++;
+                            }
+                            i = j - 1; // 跳过已处理的行
+                        }
+                    }
+                    
+                    // 限制返回行数，防止前端卡死
+                    if (matched.size() >= 1000) break;
+                }
 
                 results.addAll(matched);
-                if (results.size() >= 5000) break; // 总数限制
+                if (results.size() >= 1500) break; // 总数限制
             } catch (IOException e) {
                 System.err.println("读取文件失败: " + file.getAbsolutePath() + ", 错误: " + e.getMessage());
             }
@@ -449,6 +471,14 @@ public class LogService {
      */
     private String[] extractDateAndNumber(String fileName) {
         return extractDateAndNumber(fileName, properties.getLogPrefix());
+    }
+    
+    /**
+     * 检查日志行是否包含时间戳
+     */
+    private boolean hasTimestamp(String line) {
+        Matcher matcher = TIMESTAMP_PATTERN.matcher(line);
+        return matcher.find();
     }
     
     /**

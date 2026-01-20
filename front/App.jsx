@@ -190,7 +190,7 @@ const fetchAppsByServer = async (serverId) => {
 };
 
 
-// --- 日志行解析器 ---
+// --- 增强的日志行解析器 ---
 // 针对：[task-center:172.28.243.190:30736] [,] 2026-01-08 14:02:00.894 INFO 6762 [xxl-job...]
 const parseLogLine = (raw, id) => {
     const regex = /^\[(.*?)] \[(.*?)] (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (\w+) (\d+) \[(.*?)] (.*?) (.*)$/;
@@ -198,6 +198,7 @@ const parseLogLine = (raw, id) => {
     if (match) {
         return {
             id,
+            type: 'standard', // 标准格式日志
             node: match[1],
             traceId: match[2],
             time: match[3],
@@ -206,10 +207,53 @@ const parseLogLine = (raw, id) => {
             thread: match[6],
             className: match[7],
             msg: match[8],
-            raw
+            raw,
+            additionalLines: [] // 用于存储后续的非标准格式行
         };
     }
-    return { id, raw, time: "Unknown", level: "OTHER", msg: raw };
+    return { 
+        id, 
+        type: 'additional', // 非标准格式行
+        raw, 
+        time: "Unknown", 
+        level: "OTHER", 
+        msg: raw 
+    };
+};
+
+// --- 日志行分组处理器 ---
+// 将非标准格式的行归并到前面的标准格式日志中
+const groupLogLines = (rawLogs) => {
+    const parsedLogs = rawLogs.map((raw, index) => parseLogLine(raw, index));
+    const groupedLogs = [];
+    let currentStandardLog = null;
+
+    for (const log of parsedLogs) {
+        if (log.type === 'standard') {
+            // 如果是标准格式日志，保存之前的日志（如果有的话）
+            if (currentStandardLog) {
+                groupedLogs.push(currentStandardLog);
+            }
+            currentStandardLog = log;
+        } else if (log.type === 'additional' && currentStandardLog) {
+            // 如果是非标准格式行，且有当前的标准日志，则添加到其补充信息中
+            currentStandardLog.additionalLines.push(log);
+        } else if (log.type === 'additional' && !currentStandardLog) {
+            // 如果是非标准格式行，但没有前置的标准日志，则作为独立日志处理
+            groupedLogs.push({
+                ...log,
+                type: 'standalone', // 独立的非标准格式日志
+                additionalLines: []
+            });
+        }
+    }
+
+    // 添加最后一个标准日志（如果有的话）
+    if (currentStandardLog) {
+        groupedLogs.push(currentStandardLog);
+    }
+
+    return groupedLogs;
 };
 
 // --- JSON 格式化工具 ---
@@ -339,11 +383,11 @@ const App = () => {
     // 加载日志数据
     const loadLogs = async () => {
         // 如果没有选择特定文件，则不执行后端请求
-        if (!selectedFile) {
-            setLogs([]);
-            setIsLoading(false);
-            return;
-        }
+        // if (!selectedFile) {
+        //     setLogs([]);
+        //     setIsLoading(false);
+        //     return;
+        // }
 
         setIsLoading(true);
         setError(null);
@@ -378,8 +422,8 @@ const App = () => {
             const data = await response.json();
             if (data.success) {
                 const logData = data.data || [];
-                const parsedLogs = logData.map((raw, index) => parseLogLine(raw, index));
-                setLogs(parsedLogs);
+                const groupedLogs = groupLogLines(logData);
+                setLogs(groupedLogs);
             } else {
                 throw new Error(data.message || 'Failed to fetch logs');
             }
@@ -391,9 +435,9 @@ const App = () => {
         }
     };
 
-    useEffect(() => {
-        loadLogs();
-    }, [selectedDate, selectedServer, selectedApp]); // 当服务器或应用改变时也重新加载日志
+    // useEffect(() => {
+    //     loadLogs();
+    // }, [selectedDate, selectedServer, selectedApp]); // 当服务器或应用改变时也重新加载日志
 
     // 过滤日志
     const filteredLogs = useMemo(() => {
@@ -678,31 +722,58 @@ const App = () => {
                                     >
                                         <span className="text-slate-700 shrink-0 w-8 text-right select-none">{log.id + 1}</span>
                                         <span className="text-slate-500 shrink-0 select-none">{log.time?.split(' ')[1]?.substring(0, 8) || '--'}</span>
-                                        <span className={`shrink-0 font-bold px-1.5 rounded text-[10px] ${log.level === 'ERROR' ? 'text-red-400 bg-red-400/10' : log.level === 'WARN' ? 'text-yellow-400 bg-yellow-400/10' : 'text-emerald-400 bg-emerald-400/10'}`}>
+                                        <span className={`shrink-0 font-bold px-1.5 rounded text-[10px] ${log.level === 'ERROR' ? 'text-red-400 bg-red-400/10' : log.level === 'WARN' ? 'text-yellow-400 bg-yellow-400/10' : log.level === 'OTHER' ? 'text-gray-400 bg-gray-400/10' : 'text-emerald-400 bg-emerald-400/10'}`}>
                                             {log.level}
                                         </span>
-                                        <span className="text-indigo-400/80 truncate max-w-[120px] shrink-0">[{log.thread}]</span>
+                                        {log.type === 'standard' && (
+                                            <span className="text-indigo-400/80 truncate max-w-[120px] shrink-0">[{log.thread}]</span>
+                                        )}
                                         <span className="text-slate-300 flex-1 break-words">{log.msg}</span>
+                                        {/* 显示补充信息指示器 */}
+                                        {log.additionalLines && log.additionalLines.length > 0 && (
+                                            <span className="text-orange-400 text-[10px] bg-orange-400/10 px-2 py-1 rounded shrink-0">
+                                                +{log.additionalLines.length}
+                                            </span>
+                                        )}
                                         <ChevronDown size={14} className={`text-slate-600 transition-transform ${expandedLog === log.id ? 'rotate-180' : ''}`} />
                                     </div>
 
-                                    {/* 展开详情：自动格式化 JSON */}
+                                    {/* 展开详情：包含补充信息 */}
                                     {expandedLog === log.id && (
                                         <div className="ml-12 mr-4 my-2 p-4 bg-[#161b22] border border-slate-800 rounded-lg shadow-inner animate-in slide-in-from-top-2 duration-200">
-                                            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
-                                                <div className="flex items-center gap-4 text-xs">
-                                                    <span className="text-slate-500">节点: <span className="text-slate-300 font-mono">{log.node}</span></span>
-                                                    <span className="text-slate-500">类: <span className="text-slate-300 font-mono">{log.className}</span></span>
+                                            {log.type === 'standard' && (
+                                                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                                                    <div className="flex items-center gap-4 text-xs">
+                                                        <span className="text-slate-500">节点: <span className="text-slate-300 font-mono">{log.node}</span></span>
+                                                        <span className="text-slate-500">类: <span className="text-slate-300 font-mono">{log.className}</span></span>
+                                                    </div>
+                                                    <button className="text-slate-500 hover:text-white flex items-center gap-1 text-[10px]">
+                                                        <span className="material-symbols-outlined text-xs">content_copy</span> 复制详情
+                                                    </button>
                                                 </div>
-                                                <button className="text-slate-500 hover:text-white flex items-center gap-1 text-[10px]">
-                                                    <span className="material-symbols-outlined text-xs">content_copy</span> 复制详情
-                                                </button>
-                                            </div>
+                                            )}
                                             <div className="space-y-3">
                                                 <div className="text-xs text-slate-400 leading-relaxed bg-black/30 p-3 rounded">
                                                     <p className="font-bold mb-1 text-slate-500 uppercase tracking-tighter">Raw Message:</p>
                                                     {log.msg}
                                                 </div>
+                                                
+                                                {/* 显示补充信息（堆栈跟踪等） */}
+                                                {log.additionalLines && log.additionalLines.length > 0 && (
+                                                    <div className="bg-blue-900/20 border border-blue-500/30 p-3 rounded-md">
+                                                        <p className="text-[10px] font-bold text-blue-400 uppercase mb-2 flex items-center gap-2">
+                                                            <span className="material-symbols-outlined text-xs">*</span> 详细信息 ({log.additionalLines.length} 行)
+                                                        </p>
+                                                        <div className="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
+                                                            {log.additionalLines.map((additionalLine, index) => (
+                                                                <div key={index} className="text-xs text-blue-300/80 font-mono leading-relaxed bg-black/20 p-2 rounded border-l-2 border-blue-500/50">
+                                                                    {additionalLine.raw}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
                                                 {tryFormatJson(log.msg) && (
                                                     <div className="bg-[#0d1117] p-3 rounded-md border border-indigo-500/20">
                                                         <p className="text-[10px] font-bold text-indigo-400 uppercase mb-2 flex items-center gap-2">
