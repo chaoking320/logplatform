@@ -15,11 +15,11 @@ log:
     appName: task-center
     logPrefix: task-center-info
     servers:
-#      - id: server-1
-#        name: "Server-21"
-#        host: "172.28.242.21"
+#      - id: local
+#        name: "local"
+#        host: "localhost"
 #        port: 9876
-#        description: "Production server 21"
+#        description: "localhost"
       - id: server-22
         name: "Server-22"
         host: "172.28.242.22"
@@ -27,10 +27,10 @@ log:
         description: "Production server 22"
     apps:
 #      - id: app-1
-#        name: "apps-center"
-#        logPath: "/home/jingke2.0/logs/apps-center"
-#        logPrefix: "apps-center-info"
-#        serverId: "server-1"
+#        name: "task-center"
+#        logPath: "D:/Workspace/mine/github/logplatform/src/main/java/log/tsuperman/com/logplatform/data/logs/task-center"
+#        logPrefix: "task-center-info"
+#        serverId: "local"
 #      - id: app-2
 #        name: "auth-server"
 #        logPath: "/home/jingke2.0/logs/auth-server"

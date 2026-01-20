@@ -52,6 +52,13 @@ const fetchServerConfig = async () => {
     }
 };
 
+// --- 环境检测函数 ---
+const isProductionEnvironment = () => {
+    // 在生产环境中，通常会有特定的域名或者不是localhost
+    const hostname = window.location.hostname;
+    return hostname !== 'localhost' && hostname !== '127.0.0.1';
+};
+
 // --- API 请求封装 ---
 const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) => {
   // 如果选择了远程服务器，使用远程服务器的API地址
@@ -60,10 +67,14 @@ const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) =>
       const servers = await fetchServerConfig();
       const server = servers.find(s => s.id === selectedServer);
       if (server) {
-        // 远程服务器：如果nginx配置是 proxy_pass http://127.0.0.1:9876; (没有斜杠)
-        // 那么 /logapi/api/logs/query 会被传递给后端作为完整路径
-        // 所以我们需要直接使用 /logapi + endpoint，让后端处理 /logapi 前缀
-        return `http://${server.host}/logapi${endpoint}`;
+        // 远程服务器：根据环境决定是否添加/logapi前缀
+        if (isProductionEnvironment()) {
+          // 生产环境：通过nginx的/logapi/代理
+          return `http://${server.host}/logapi${endpoint}`;
+        } else {
+          // 开发环境：直接访问远程服务器的nginx代理
+          return `http://${server.host}/logapi${endpoint}`;
+        }
       } else {
         throw new Error(`找不到服务器配置: ${selectedServer}`);
       }
@@ -73,8 +84,14 @@ const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) =>
     }
   }
 
-  // 本地服务器：通过nginx的/api/代理或vite代理，直接使用endpoint
-  return endpoint;
+  // 本地服务器：根据环境决定API路径
+  if (isProductionEnvironment()) {
+    // 生产环境：通过nginx的/api/代理，需要添加/logapi前缀
+    return `/logapi${endpoint}`;
+  } else {
+    // 开发环境：通过Vite代理到localhost:9876，不需要/logapi前缀
+    return endpoint;
+  }
 };
 
 const fetchLogs = async (
