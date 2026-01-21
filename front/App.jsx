@@ -67,14 +67,16 @@ const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) =>
       const servers = await fetchServerConfig();
       const server = servers.find(s => s.id === selectedServer);
       if (server) {
-        // 远程服务器：根据环境决定是否添加/logapi前缀
-        if (isProductionEnvironment()) {
-          // 生产环境：通过nginx的/logapi/代理
-          return `http://${server.host}/logapi${endpoint}`;
+        // 构建基础URL
+        let baseUrl = `http://${server.host}`;
+        // 如果服务器配置了虚拟路径，则不添加端口号（假定通过反向代理访问）
+        if (server.virtual && server.virtual.trim() !== '') {
+          baseUrl += `/${server.virtual}`;
         } else {
-          // 开发环境：直接访问远程服务器的nginx代理
-          return `http://${server.host}/logapi${endpoint}`;
+          // 如果没有虚拟路径，则添加端口号
+          baseUrl += `:${server.port}`;
         }
+        return `${baseUrl}${endpoint}`;
       } else {
         throw new Error(`找不到服务器配置: ${selectedServer}`);
       }
@@ -84,14 +86,8 @@ const getApiUrl = async (endpoint, selectedServer = null, selectedApp = null) =>
     }
   }
 
-  // 本地服务器：根据环境决定API路径
-  if (isProductionEnvironment()) {
-    // 生产环境：通过nginx的/api/代理，需要添加/logapi前缀
-    return `/logapi${endpoint}`;
-  } else {
-    // 开发环境：通过Vite代理到localhost:9876，不需要/logapi前缀
-    return endpoint;
-  }
+  // 本地服务器：直接返回端点，不添加虚拟路径
+  return endpoint;
 };
 
 const fetchLogs = async (

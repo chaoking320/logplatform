@@ -38,3 +38,5 @@ src/main/java/log/tsuperman/com/logplatform/data/logs
 python_logplatform/py_logplatform
 python_logplatform/__pycache__
 python_logplatform/data/logs
+front/node
+src/main/resources/static/assets

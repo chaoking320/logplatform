@@ -15,27 +15,35 @@ log:
     appName: task-center
     logPrefix: task-center-info
     servers:
-#      - id: local
-#        name: "local"
-#        host: "localhost"
-#        port: 9876
-#        description: "localhost"
+      - id: KMS-BACKEND
+        name: "KMS-BACKEND"
+        host: "172.18.4.104"
+        port: 9876
+        description: "KMS知识库后台服务（无虚拟目录）"
+        virtual: ""
+      - id: LOCALHOST
+        name: "Localhost"
+        host: "localhost"
+        port: 9876
+        description: "本地服务器（无虚拟目录）"
+        virtual: ""
       - id: server-22
         name: "Server-22"
         host: "172.28.242.22"
         port: 9876
-        description: "Production server 22"
+        description: "Production server 22（有虚拟目录）"
+        virtual: "logapi"
     apps:
-#      - id: app-1
-#        name: "task-center"
-#        logPath: "D:/Workspace/mine/github/logplatform/src/main/java/log/tsuperman/com/logplatform/data/logs/task-center"
-#        logPrefix: "task-center-info"
-#        serverId: "local"
-#      - id: app-2
-#        name: "auth-server"
-#        logPath: "/home/jingke2.0/logs/auth-server"
-#        logPrefix: "auth-server-info"
-#        serverId: "server-1"
+      - id: app-1
+        name: "kms-backend"
+        logPath: "/app/logs"
+        logPrefix: "jeecgboot"
+        serverId: "KMS-BACKEND"
+      - id: app-2
+        name: "localhost"
+        logPath: "D:/Workspace/mine/github/logplatform/src/main/java/log/tsuperman/com/logplatform/data/logs/task-center"
+        logPrefix: "task-center-info"
+        serverId: "LOCALHOST"
 #      - id: app-3
 #        name: "task-center"
 #        logPath: "/home/jingke2.0/logs/task-center"

@@ -1,6 +1,8 @@
 package log.tsuperman.com.logplatform.service;
 
+import log.tsuperman.com.logplatform.config.LogPlatformProperties;
 import log.tsuperman.com.logplatform.entity.ServerConfig;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -10,13 +12,15 @@ import java.util.*;
 @Service
 public class RemoteLogService {
     private final RestTemplate restTemplate = new RestTemplate();
+    
+    @Autowired
+    private LogPlatformProperties logPlatformProperties;
 
     /**
      * 查询远程服务器上的日志
      */
     public List<String> queryRemoteLogs(ServerConfig server, String date, String keyword, String startTime, String endTime, String file) {
-//        String baseUrl = String.format("http://%s:%d/api/logs/query", server.getHost(), server.getPort());
-        String baseUrl = String.format("http://%s/logapi/api/logs/query", server.getHost());
+        String baseUrl = String.format("%s/api/logs/query", logPlatformProperties.getServerUrl(server));
 
         String url = String.format("%s?date=%s&startTime=%s&endTime=%s", baseUrl, date, startTime, endTime);
         
@@ -48,8 +52,7 @@ public class RemoteLogService {
      * 获取远程服务器上的可用日期列表
      */
     public Set<String> getRemoteAvailableDates(ServerConfig server) {
-//        String url = String.format("http://%s:%d/api/logs/dates", server.getHost(), server.getPort());
-        String url = String.format("http://172.28.242.22/logapi/api/logs/dates");
+        String url = String.format("%s/api/logs/dates", logPlatformProperties.getServerUrl(server));
         try {
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
             Map<String, Object> responseBody = response.getBody();
@@ -70,8 +73,7 @@ public class RemoteLogService {
      * 获取远程服务器上指定日期的日志文件列表
      */
     public List<Map<String, Object>> getRemoteDateLogFiles(ServerConfig server, String date) {
-//        String url = String.format("http://%s:%d/api/logs/files/%s", server.getHost(), server.getPort(), date);
-        String url = String.format("http://172.28.242.22/logapi/api/logs/files/%s", date);
+        String url = String.format("%s/api/logs/files/%s", logPlatformProperties.getServerUrl(server), date);
 
         try {
             ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);

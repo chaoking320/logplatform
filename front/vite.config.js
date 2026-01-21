@@ -9,14 +9,14 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api': {
-        // target: 'http://172.28.242.22',
         target: 'http://localhost:9876',
         changeOrigin: true
       }
     }
   },
   build: {
-    outDir: 'dist',
-    assetsDir: 'assets'
+    outDir: '../src/main/resources/static',
+    assetsDir: 'assets',
+    emptyOutDir: true
   }
 })

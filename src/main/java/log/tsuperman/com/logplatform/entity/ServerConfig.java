@@ -6,6 +6,7 @@ public class ServerConfig {
     private String host;
     private int port;
     private String description;
+    private String virtual;
 
     public ServerConfig() {}
 
@@ -56,5 +57,13 @@ public class ServerConfig {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getVirtual() {
+        return virtual;
+    }
+
+    public void setVirtual(String virtual) {
+        this.virtual = virtual;
     }
 }

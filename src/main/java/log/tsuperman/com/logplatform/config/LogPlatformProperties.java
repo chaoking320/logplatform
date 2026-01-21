@@ -82,4 +82,20 @@ public class LogPlatformProperties {
     public String getFullLogPath() {
         return logPath + "/" + appName;
     }
+    
+    /**
+     * 获取服务器的完整URL（包括虚拟路径，如果有）
+     */
+    public String getServerUrl(ServerConfig server) {
+        StringBuilder url = new StringBuilder();
+        url.append("http://").append(server.getHost());
+        // 如果服务器配置了虚拟路径，则不添加端口号（假定通过反向代理访问）
+        if (server.getVirtual() != null && !server.getVirtual().isEmpty()) {
+            url.append("/").append(server.getVirtual());
+        } else {
+            // 如果没有虚拟路径，则添加端口号
+            url.append(":").append(server.getPort());
+        }
+        return url.toString();
+    }
 }
