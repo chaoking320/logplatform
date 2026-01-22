@@ -94,6 +94,11 @@ public class LogService {
                 return name.equals(fileName);
             }
             
+            // 获取基本文件名（去除扩展名）
+            String baseName = name.substring(0, name.lastIndexOf('.'));
+            // 检查是否是当前前缀的变体（如XXX_任意内容.log 应等价于 XXX.log）
+            boolean isVariantOfPrefix = isNameVariantOfPrefix(baseName, logPrefix);
+            
             // 根据logType动态调整前缀匹配逻辑
             boolean isCurrentDayFile = false;
             boolean isHistoryFile = false;
@@ -101,11 +106,14 @@ public class LogService {
             if (logType == null || logType.equalsIgnoreCase("all")) {
                 // 查找所有类型：既包含原前缀，也包含对应的error前缀
                 String basePrefix = logPrefix.replace("-info", ""); // 去掉-info后缀，得到基础前缀
+                // 检查基础前缀的变体
+                boolean isVariantOfBasePrefix = isNameVariantOfPrefix(baseName, basePrefix + "-error");
                 
                 // 当天文件检查
                 isCurrentDayFile = date.equals(currentDate) && 
                                  (name.equals(logPrefix + ".log") || 
-                                  name.equals(basePrefix + "-error.log"));
+                                  name.equals(basePrefix + "-error.log") ||
+                                  isVariantOfPrefix || isVariantOfBasePrefix); // 添加前缀变体文件
                 
                 // 历史文件检查
                 isHistoryFile = name.contains(date) && 
@@ -114,13 +122,14 @@ public class LogService {
                               
             } else if (logType.equalsIgnoreCase("info")) {
                 // 只查找info类型
-                isCurrentDayFile = date.equals(currentDate) && name.equals(logPrefix + ".log");
+                isCurrentDayFile = date.equals(currentDate) && (name.equals(logPrefix + ".log") || isVariantOfPrefix);
                 isHistoryFile = name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log");
                 
             } else if (logType.equalsIgnoreCase("error")) {
                 // 查找error类型：将-info替换为-error
                 String errorPrefix = logPrefix.replace("-info", "-error");
-                isCurrentDayFile = date.equals(currentDate) && name.equals(errorPrefix + ".log");
+                boolean isVariantOfErrorPrefix = isNameVariantOfPrefix(baseName, errorPrefix);
+                isCurrentDayFile = date.equals(currentDate) && (name.equals(errorPrefix + ".log") || isVariantOfErrorPrefix);
                 isHistoryFile = name.contains(date) && name.startsWith(errorPrefix) && name.endsWith(".log");
             }
             
@@ -255,6 +264,11 @@ public class LogService {
         System.out.println("查找日期 " + date + " 的日志文件，当前日期: " + currentDate + "，日志类型: " + logType);
 
         File[] files = logDir.listFiles((dir, name) -> {
+            // 获取基本文件名（去除扩展名）
+            String baseName = name.substring(0, name.lastIndexOf('.'));
+            // 检查是否是当前前缀的变体（如XXX_任意内容.log 应等价于 XXX.log）
+            boolean isVariantOfPrefix = isNameVariantOfPrefix(baseName, logPrefix);
+            
             // 根据logType动态调整前缀匹配逻辑
             boolean matchesPrefix = false;
             boolean isCurrentDayFile = false;
@@ -263,11 +277,14 @@ public class LogService {
             if (logType == null || logType.equalsIgnoreCase("all")) {
                 // 查找所有类型：既包含原前缀，也包含对应的error前缀
                 String basePrefix = logPrefix.replace("-info", ""); // 去掉-info后缀，得到基础前缀
+                // 检查基础前缀的变体
+                boolean isVariantOfBasePrefix = isNameVariantOfPrefix(baseName, basePrefix + "-error");
                 
                 // 当天文件检查
                 isCurrentDayFile = date.equals(currentDate) && 
                                  (name.equals(logPrefix + ".log") || 
-                                  name.equals(basePrefix + "-error.log"));
+                                  name.equals(basePrefix + "-error.log") ||
+                                  isVariantOfPrefix || isVariantOfBasePrefix); // 添加前缀变体文件
                 
                 // 历史文件检查
                 isHistoryFile = name.contains(date) && 
@@ -276,13 +293,14 @@ public class LogService {
                               
             } else if (logType.equalsIgnoreCase("info")) {
                 // 只查找info类型
-                isCurrentDayFile = date.equals(currentDate) && name.equals(logPrefix + ".log");
+                isCurrentDayFile = date.equals(currentDate) && (name.equals(logPrefix + ".log") || isVariantOfPrefix);
                 isHistoryFile = name.contains(date) && name.startsWith(logPrefix) && name.endsWith(".log");
                 
             } else if (logType.equalsIgnoreCase("error")) {
                 // 查找error类型：将-info替换为-error
                 String errorPrefix = logPrefix.replace("-info", "-error");
-                isCurrentDayFile = date.equals(currentDate) && name.equals(errorPrefix + ".log");
+                boolean isVariantOfErrorPrefix = isNameVariantOfPrefix(baseName, errorPrefix);
+                isCurrentDayFile = date.equals(currentDate) && (name.equals(errorPrefix + ".log") || isVariantOfErrorPrefix);
                 isHistoryFile = name.contains(date) && name.startsWith(errorPrefix) && name.endsWith(".log");
             }
             
@@ -292,6 +310,7 @@ public class LogService {
                              " - 日志类型: " + logType +
                              " - 是当天文件: " + isCurrentDayFile + 
                              " - 是历史文件: " + isHistoryFile +
+                             " - 是前缀变体: " + isVariantOfPrefix +
                              " - 最终匹配: " + matches);
             
             return matches;
@@ -455,12 +474,21 @@ public class LogService {
      */
     private String[] extractDateAndNumber(String fileName, String logPrefix) {
         // 匹配 task-center-info.2026-01-08.1.log 这种格式
-        String regex = logPrefix + "\\.([0-9]{4}-[0-9]{2}-[0-9]{2})\\.(\\d+)\\.log";
+        String regex = logPrefix + "\\.(\\d{4}-\\d{2}-\\d{2})\\.(\\d+)\\.log";
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(regex);
         java.util.regex.Matcher matcher = pattern.matcher(fileName);
         
         if (matcher.matches()) {
             return new String[]{matcher.group(1), matcher.group(2)}; // [date, number]
+        }
+        
+        // 尝试匹配变体格式，如 task-center-info_suffix.2026-01-08.1.log
+        String variantRegex = logPrefix + "_.*\\.(\\d{4}-\\d{2}-\\d{2})\\.(\\d+)\\.log";
+        java.util.regex.Pattern variantPattern = java.util.regex.Pattern.compile(variantRegex);
+        java.util.regex.Matcher variantMatcher = variantPattern.matcher(fileName);
+        
+        if (variantMatcher.matches()) {
+            return new String[]{variantMatcher.group(1), variantMatcher.group(2)}; // [date, number]
         }
         
         return new String[]{"", "0"};
@@ -499,6 +527,19 @@ public class LogService {
     }
     
     /**
+     * 检查文件名是否是给定前缀的变体（如XXX_任意内容.log 应等价于 XXX.log）
+     */
+    private boolean isNameVariantOfPrefix(String fileName, String prefix) {
+        // 如果文件名等于前缀，返回true
+        if (fileName.equals(prefix)) {
+            return true;
+        }
+        
+        // 如果文件名以prefix_开头，说明是变体
+        return fileName.startsWith(prefix + "_");
+    }
+    
+    /**
      * 获取可用的日期列表
      * @param appId 应用ID（可选，如果不提供则使用默认配置）
      */
@@ -530,21 +571,29 @@ public class LogService {
         }
         
         File[] files = logDir.listFiles((dir, name) -> 
-            name.startsWith(logPrefix) && name.endsWith(".log")
+            name.endsWith(".log")
         );
         
         if (files == null) return dates;
         
-        Pattern datePattern = Pattern.compile(logPrefix + "\\.(\\d{4}-\\d{2}-\\d{2})(\\.\\d+)?\\.log");
+        // 使用更灵活的模式匹配，支持前缀变体
+        String escapedLogPrefix = java.util.regex.Pattern.quote(logPrefix);
+        Pattern datePattern = Pattern.compile(escapedLogPrefix + "\\.(\\d{4}-\\d{2}-\\d{2})(\\.\\d+)?\\.log");
+        // 同时考虑前缀变体的模式
+        Pattern variantDatePattern = Pattern.compile(escapedLogPrefix + "_.*\\.(\\d{4}-\\d{2}-\\d{2})(\\.\\d+)?\\.log");
         
         for (File file : files) {
             String fileName = file.getName();
+            String baseName = fileName.substring(0, fileName.lastIndexOf('.')); // 获取不带扩展名的文件名
             java.util.regex.Matcher matcher = datePattern.matcher(fileName);
+            java.util.regex.Matcher variantMatcher = variantDatePattern.matcher(fileName);
             
             if (matcher.matches()) {
                 dates.add(matcher.group(1)); // 提取日期部分
-            } else if (fileName.equals(logPrefix + ".log")) {
-                // 当前日志文件，添加今天日期
+            } else if (variantMatcher.matches()) {
+                dates.add(variantMatcher.group(1)); // 提取变体文件的日期部分
+            } else if (fileName.equals(logPrefix + ".log") || isNameVariantOfPrefix(baseName, logPrefix)) {
+                // 当前日志文件或其变体，添加今天日期
                 dates.add(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
             }
         }

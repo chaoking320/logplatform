@@ -448,18 +448,18 @@ const App = () => {
         }
     };
 
-    // useEffect(() => {
-    //     loadLogs();
-    // }, [selectedDate, selectedServer, selectedApp]); // 当服务器或应用改变时也重新加载日志
+    useEffect(() => {
+        loadLogs();
+    }, [selectedDate, selectedServer, selectedApp]); // 当服务器或应用改变时也重新加载日志
 
     // 过滤日志
     const filteredLogs = useMemo(() => {
         return logs.filter(log => {
             const matchLevel = filterLevel === "ALL" || log.level === filterLevel;
             const matchQuery = log.raw.toLowerCase().includes(searchQuery.toLowerCase());
-            const logHourMin = log.time.includes(' ') ? log.time.split(' ')[1].substring(0, 5) : "00:00";
-            const matchTime = logHourMin >= startTime && logHourMin <= endTime;
-            return matchLevel && matchQuery && matchTime;
+            
+            // 不再进行时间过滤，因为后端已经根据请求参数过滤了数据
+            return matchLevel && matchQuery;
         });
     }, [logs, filterLevel, searchQuery, startTime, endTime]);
 

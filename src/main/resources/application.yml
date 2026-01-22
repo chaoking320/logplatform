@@ -27,11 +27,17 @@ log:
         port: 9876
         description: "本地服务器（无虚拟目录）"
         virtual: ""
-      - id: server-22
-        name: "Server-22"
+      - id: RAGFLOW
+        name: "RAGFLOW"
+        host: "172.18.4.106"
+        port: 9876
+        description: "RAGFLOW（AI知识库）"
+        virtual: ""
+      - id: EDM
+        name: "EDM"
         host: "172.28.242.22"
         port: 9876
-        description: "Production server 22（有虚拟目录）"
+        description: "数字化设备管理"
         virtual: "logapi"
     apps:
       - id: app-1
@@ -44,16 +50,16 @@ log:
         logPath: "D:/Workspace/mine/github/logplatform/src/main/java/log/tsuperman/com/logplatform/data/logs/task-center"
         logPrefix: "task-center-info"
         serverId: "LOCALHOST"
-#      - id: app-3
-#        name: "task-center"
-#        logPath: "/home/jingke2.0/logs/task-center"
-#        logPrefix: "task-center-info"
-#        serverId: "server-1"
-#      - id: app-4
-#        name: "file-center"
-#        logPath: "/home/jingke2.0/logs/file-center"
-#        logPrefix: "file-center-info"
-#        serverId: "server-1"
+      - id: app-3
+        name: "ragflow-server"
+        logPath: "/root/ragflow/jk-kms-ragflow/docker/ragflow-logs"
+        logPrefix: "ragflow_server"
+        serverId: "RAGFLOW"
+      - id: app-4
+        name: "task_executor"
+        logPath: "/root/ragflow/jk-kms-ragflow/docker/ragflow-logs"
+        logPrefix: "task_executor"
+        serverId: "RAGFLOW"
 #      - id: app-5
 #        name: "flow-center"
 #        logPath: "/home/jingke2.0/logs/flow-center"
@@ -63,39 +69,39 @@ log:
         name: "apps-center"
         logPath: "/home/jingke2.0/logs/apps-center"
         logPrefix: "apps-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-7
         name: "task-center"
         logPath: "/home/jingke2.0/logs/task-center"
         logPrefix: "task-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-8
         name: "flow-center"
         logPath: "/home/jingke2.0/logs/flow-center"
         logPrefix: "flow-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-9
         name: "report-center"
         logPath: "/home/jingke2.0/logs/report-center"
         logPrefix: "report-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-10
         name: "auth-server"
         logPath: "/home/jingke2.0/logs/auth-server"
         logPrefix: "auth-server-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-11
         name: "file-center"
         logPath: "/home/jingke2.0/logs/file-center"
         logPrefix: "file-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-12
         name: "system-center"
         logPath: "/home/jingke2.0/logs/system-center"
         logPrefix: "system-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
       - id: app-13
         name: "biz-api-center"
         logPath: "/home/jingke2.0/logs/biz-api-center"
         logPrefix: "biz-api-center-info"
-        serverId: "server-22"
+        serverId: "EDM"
